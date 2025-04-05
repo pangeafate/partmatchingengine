@@ -1,0 +1,42 @@
+[
+  {
+    "id": "P001",
+    "name": "Hydraulic Pump",
+    "description": "High-pressure hydraulic pump for industrial applications. Capable of operating at pressures up to 5000 PSI.",
+    "specifications": {
+      "pressure_rating": "5000 PSI",
+      "flow_rate": "20 GPM",
+      "weight": "15 kg",
+      "dimensions": "30cm x 20cm x 15cm"
+    },
+    "compatibility": ["Model X Excavator", "Heavy Duty Loader", "Industrial Press"],
+    "manufacturer": "HydroTech Industries"
+  },
+  {
+    "id": "P002",
+    "name": "Electric Motor",
+    "description": "Three-phase electric motor with high efficiency and low noise operation. Suitable for continuous duty applications.",
+    "specifications": {
+      "power": "7.5 kW",
+      "voltage": "380V",
+      "current": "15A",
+      "rpm": "1450",
+      "efficiency": "92%"
+    },
+    "compatibility": ["Conveyor Systems", "Industrial Fans", "Pumping Stations"],
+    "manufacturer": "ElectroDrive Corp"
+  },
+  {
+    "id": "P003",
+    "name": "Pneumatic Valve",
+    "description": "Solenoid-operated pneumatic valve for air flow control in automated systems.",
+    "specifications": {
+      "pressure_range": "0-10 bar",
+      "port_size": "1/4 inch",
+      "response_time": "15ms",
+      "operating_temperature": "-10°C to 60°C"
+    },
+    "compatibility": ["Automated Assembly Lines", "Packaging Equipment", "Robotic Systems"],
+    "manufacturer": "AirControl Systems"
+  }
+]
