@@ -5,7 +5,7 @@ const chatMessages = document.getElementById('chat-messages');
 const resetButton = document.getElementById('reset-chat');
 
 // API Configuration
-const API_URL = 'http://localhost:5002/api';
+const API_URL = process.env.API_URL || 'http://localhost:5002/api';
 let sessionId = null;
 
 // Helper Functions

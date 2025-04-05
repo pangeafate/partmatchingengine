@@ -1,0 +1,25 @@
+services:
+  # Backend API Service
+  - type: web
+    name: part-matching-engine-api
+    env: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && gunicorn app:app
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 10000
+    
+  # Frontend Static Site
+  - type: web
+    name: part-matching-engine-frontend
+    env: static
+    buildCommand: echo "Static site, no build needed"
+    staticPublishPath: ./frontend
+    envVars:
+      - key: API_URL
+        fromService:
+          name: part-matching-engine-api
+          type: web
+          property: url
