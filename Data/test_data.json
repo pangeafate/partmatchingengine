@@ -1,0 +1,36 @@
+[
+  {
+    "id": "31BS034MT17T",
+    "name": "Connector 31BS034MT17T",
+    "description": "Solder connector series AS50151",
+    "specifications": {
+      "type": "Solder connector",
+      "series": "AS50151"
+    },
+    "compatibility": ["770-001S106"],
+    "manufacturer": "Test Manufacturer"
+  },
+  {
+    "id": "311F039",
+    "name": "Shrink Boot 311F039",
+    "description": "Shrink boot with various configurations",
+    "specifications": {
+      "profile": {
+        "straight": {
+          "coating": {
+            "Nickle-PTFE": {
+              "size_code": {
+                "18": {
+                  "entry_size": {
+                    "7": "31FS039MT1807-NK"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "manufacturer": "Test Manufacturer"
+  }
+]

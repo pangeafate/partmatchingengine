@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -16,6 +15,7 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -23,17 +23,21 @@ var/
 # Virtual Environment
 venv/
 ENV/
+env/
 
 # Environment variables
 .env
 
-# IDE files
+# Vector database
+backend/chroma_db/
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS specific files
+# OS
 .DS_Store
 .DS_Store?
 ._*
@@ -42,5 +46,5 @@ ENV/
 ehthumbs.db
 Thumbs.db
 
-# Database
-backend/chroma_db/
+# Logs
+*.log
