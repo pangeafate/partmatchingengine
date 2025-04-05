@@ -29,36 +29,51 @@ class ChatService:
         context_parts = []
         
         for i, doc in enumerate(documents, 1):
-            # Parse the JSON content
-            try:
-                content = json.loads(doc.page_content)
-                # Format the content in a readable way
-                formatted_content = f"Item {i}:\n"
-                formatted_content += f"ID: {content.get('id', 'N/A')}\n"
-                formatted_content += f"Name: {content.get('name', 'N/A')}\n"
-                formatted_content += f"Description: {content.get('description', 'N/A')}\n"
+            # Check if this is a PDF document with page information
+            if doc.metadata.get("source") == "pdf_json_data":
+                page_number = doc.metadata.get("page_number", "Unknown")
+                filename = doc.metadata.get("filename", "Unknown")
+                chunk_index = doc.metadata.get("chunk_index", None)
                 
-                # Format specifications if they exist
-                specs = content.get('specifications', {})
-                if specs:
-                    formatted_content += "Specifications:\n"
-                    for key, value in specs.items():
-                        formatted_content += f"  - {key}: {value}\n"
+                # Format header based on whether this is a full page or a chunk
+                if chunk_index is not None:
+                    header = f"Document: {filename} (Page {page_number}, Chunk {chunk_index + 1})"
+                else:
+                    header = f"Document: {filename} (Page {page_number})"
                 
-                # Format compatibility if it exists
-                compatibility = content.get('compatibility', [])
-                if compatibility:
-                    formatted_content += "Compatible with:\n"
-                    for item in compatibility:
-                        formatted_content += f"  - {item}\n"
-                
-                # Add manufacturer
-                formatted_content += f"Manufacturer: {content.get('manufacturer', 'N/A')}\n"
-                
+                formatted_content = f"{header}\n{'='*len(header)}\n{doc.page_content}\n"
                 context_parts.append(formatted_content)
-            except json.JSONDecodeError:
-                # If not valid JSON, use as is
-                context_parts.append(f"Item {i}:\n{doc.page_content}\n")
+            else:
+                # Try to parse as JSON for other document types
+                try:
+                    content = json.loads(doc.page_content)
+                    # Format the content in a readable way
+                    formatted_content = f"Item {i}:\n"
+                    formatted_content += f"ID: {content.get('id', 'N/A')}\n"
+                    formatted_content += f"Name: {content.get('name', 'N/A')}\n"
+                    formatted_content += f"Description: {content.get('description', 'N/A')}\n"
+                    
+                    # Format specifications if they exist
+                    specs = content.get('specifications', {})
+                    if specs:
+                        formatted_content += "Specifications:\n"
+                        for key, value in specs.items():
+                            formatted_content += f"  - {key}: {value}\n"
+                    
+                    # Format compatibility if it exists
+                    compatibility = content.get('compatibility', [])
+                    if compatibility:
+                        formatted_content += "Compatible with:\n"
+                        for item in compatibility:
+                            formatted_content += f"  - {item}\n"
+                    
+                    # Add manufacturer
+                    formatted_content += f"Manufacturer: {content.get('manufacturer', 'N/A')}\n"
+                    
+                    context_parts.append(formatted_content)
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, use as is
+                    context_parts.append(f"Item {i}:\n{doc.page_content}\n")
         
         return "\n".join(context_parts)
     
@@ -78,6 +93,8 @@ class ChatService:
             {"role": "system", "content": (
                 "You are a helpful assistant that answers questions about industrial parts and equipment. "
                 "Use the following information to answer the user's question. "
+                "When providing information, include references to the page numbers where the information was found. "
+                "For example, 'According to page 5 of the document...' or 'As mentioned on page 12...'. "
                 "If you don't know the answer based on the provided information, say so. "
                 "Do not make up information.\n\n"
                 f"Context information:\n{context}"

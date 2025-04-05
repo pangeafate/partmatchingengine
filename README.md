@@ -9,6 +9,8 @@ A web service that allows users to ask questions about industrial parts and equi
 - Vector database for efficient similarity search
 - Session management for maintaining conversation context
 - Responsive design that works on desktop and mobile devices
+- Page number references in responses for better traceability
+- Optimized chunking strategy for PDF document data
 
 ## Tech Stack
 
@@ -91,7 +93,7 @@ A web service that allows users to ask questions about industrial parts and equi
 1. The application will load with a welcome message
 2. Type your question about industrial parts in the input field
 3. Press Enter or click the send button to submit your question
-4. The system will retrieve relevant information and generate a response
+4. The system will retrieve relevant information and generate a response with page references
 5. You can continue the conversation with follow-up questions
 6. Use the "Reset Chat" button to start a new conversation
 
@@ -99,11 +101,21 @@ A web service that allows users to ask questions about industrial parts and equi
 
 The application uses JSON files stored in the `Data` directory. Each JSON file contains information about industrial parts and equipment. The system automatically loads all JSON files in this directory and indexes them in the vector database.
 
+### PDF Document Data Structure
+
+The system is optimized to handle structured JSON data extracted from PDF documents. The JSON structure includes:
+- Page number information
+- Element types (Title, NarrativeText, etc.)
+- Hierarchical relationships between elements
+- Text content and metadata
+
+The embedding process preserves this structure to ensure accurate retrieval and context maintenance.
+
 ## Development
 
 ### Adding New Data
 
-1. Add your JSON files to the `Data/` directory.
+1. Add your JSON files to the `Data` directory.
 2. The system will automatically process these files when creating the vector database.
 
 ### Customizing the System
@@ -111,6 +123,15 @@ The application uses JSON files stored in the `Data` directory. Each JSON file c
 - Modify the system prompt in `chat_service.py` to change how the assistant responds.
 - Adjust the vector search parameters in `vector_store.py` to tune retrieval performance.
 - Customize the frontend styling in `styles.css` to match your branding.
+
+### Advanced Embedding Configuration
+
+The system uses an optimized chunking strategy for PDF document data:
+- Pages are processed as coherent units
+- Hierarchical structure is preserved
+- Content is organized by element type (titles, narrative text, etc.)
+- Overlapping chunks are created for longer pages
+- Metadata includes page numbers and document information
 
 ## License
 
