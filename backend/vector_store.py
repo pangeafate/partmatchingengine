@@ -47,31 +47,28 @@ class VectorStore:
         self.vector_db = None
     
     def load_json_files(self) -> List[Dict[str, Any]]:
-        """Load specific JSON files from the data directory."""
+        """Load all JSON files from the data directory."""
         all_data = []
-        # Only load sample.json and test_data.json for testing
-        json_files = [
-            os.path.join(self.data_dir, "sample.json"),
-            os.path.join(self.data_dir, "test_data.json")
-        ]
         
-        print(f"Loading specific JSON files for testing")
+        # Load all JSON files in the data directory
+        json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
+        
+        print(f"Loading JSON files from {self.data_dir}")
+        print(f"Found {len(json_files)} JSON files")
+        
         for file_path in json_files:
-            if os.path.exists(file_path):
-                print(f"Loading file: {file_path}")
-                try:
-                    with open(file_path, 'r') as f:
-                        data = json.load(f)
-                        if isinstance(data, list):
-                            print(f"  - Loaded {len(data)} items from list")
-                            all_data.extend(data)
-                        else:
-                            print(f"  - Loaded 1 item from object")
-                            all_data.append(data)
-                except Exception as e:
-                    print(f"Error loading {file_path}: {e}")
-            else:
-                print(f"File not found: {file_path}")
+            print(f"Loading file: {file_path}")
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        print(f"  - Loaded {len(data)} items from list")
+                        all_data.extend(data)
+                    else:
+                        print(f"  - Loaded 1 item from object")
+                        all_data.append(data)
+            except Exception as e:
+                print(f"Error loading {file_path}: {e}")
         
         print(f"Total items loaded: {len(all_data)}")
         return all_data
@@ -321,3 +318,18 @@ class VectorStore:
             self.get_or_create_vector_db()
         
         return self.vector_db.similarity_search(query, k=k)
+    
+    def rebuild_vector_db(self) -> None:
+        """Force a complete rebuild of the vector database."""
+        print("Rebuilding vector database...")
+        
+        # Delete the existing vector database if it exists
+        import shutil
+        if os.path.exists(self.db_path):
+            shutil.rmtree(self.db_path)
+            print(f"Deleted existing vector database at {self.db_path}")
+        
+        # Create a new vector database
+        vector_db = self.create_vector_db()
+        self.save_vector_db()
+        print("Vector database rebuilt successfully")

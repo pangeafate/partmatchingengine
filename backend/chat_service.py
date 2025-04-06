@@ -159,6 +159,18 @@ class ChatService:
             elif doc.metadata.get("chunk_type") == "section":
                 score += 0.2
             
+            # Boost score for exact keyword matches
+            page_content_lower = doc.page_content.lower()
+            for term in query_terms:
+                if term in page_content_lower:
+                    score += 0.2
+                    
+                    # Give extra boost for exact product name matches
+                    if len(term) > 4:  # Only boost for meaningful terms, not short words
+                        # Look for exact matches surrounded by spaces or punctuation
+                        if f" {term} " in page_content_lower or f"{term}." in page_content_lower:
+                            score += 0.5
+            
             return score
         
         # Re-rank documents
@@ -184,6 +196,11 @@ class ChatService:
                 "5. If you don't know the answer based on the provided information, say so clearly\n"
                 "6. Do not make up information or part numbers\n"
                 "7. When answering questions about shrink boots or connectors, provide the exact part number format as shown in the documentation\n"
+                "8. Pay special attention to product names, especially trademarked names like 'MasterWrap™'\n"
+                "9. Look for variations in product names and terms (e.g., with/without spaces, with/without symbols)\n"
+                "10. When responding about proprietary products, include any trademarked symbols (™, ®) in your response\n"
+                "11. Be attentive to specialized industry terminology and maintain exact spelling and formatting\n"
+                "12. If a product has special features or unique selling points, highlight these in your response\n"
                 "\n\n"
                 f"Context information:\n{context}"
             )}
