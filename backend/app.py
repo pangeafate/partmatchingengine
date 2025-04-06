@@ -104,33 +104,15 @@ def chat():
     if not data or 'query' not in data:
         return jsonify({"error": "Query is required"}), 400
     
-    # Get session_id and query from request data
-    session_id = data.get('session_id', 'default')
-    query = data['query']
-    
     # Check if chat service is ready
     if not vector_db_ready or chat_service is None:
-        # Return a sample response instead of an error during initialization
-        # This allows the frontend to show something useful while the system initializes
-        sample_response = """
-        I'm still initializing my knowledge base, but I can tell you that the part number for a 311F*039 with straight profile, Nickle-PTFE, size code 18, entry size 7 is 31FS039MT1807.
-        
-        This is based on the part numbering system where:
-        - 31F indicates the base part number (311F*039)
-        - S indicates straight profile
-        - 039 is the part series
-        - MT indicates Nickle-PTFE material
-        - 18 is the size code
-        - 07 is the entry size
-        
-        Please check back in a few minutes when I'll be fully initialized and able to answer more detailed questions about industrial parts.
-        """
-        
         return jsonify({
-            "response": sample_response.strip(),
-            "session_id": session_id,
-            "status": "initializing_with_sample"
-        }), 200  # Return 200 OK instead of 503 to allow the frontend to display the response
+            "response": "The system is still initializing. Please try again in a moment.",
+            "status": "initializing"
+        }), 503  # Service Unavailable
+    
+    query = data['query']
+    session_id = data.get('session_id', 'default')
     
     # Get or initialize chat history for this session
     if session_id not in chat_histories:
