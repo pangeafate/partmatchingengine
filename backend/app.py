@@ -91,6 +91,8 @@ def reset_chat():
     
     return jsonify({"status": "Chat history reset", "session_id": session_id})
 
+# Make sure app is listening on the port that Render expects
+# This port will be used when running locally directly with python app.py
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5002))
+    port = int(os.environ.get('PORT', 10000))  # Changed default to 10000 to match render.yaml
     app.run(host='0.0.0.0', port=port, debug=True)

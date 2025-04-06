@@ -3,9 +3,12 @@ import json
 import os
 import openai
 from langchain.schema import Document
-
-from vector_store import VectorStore
-
+try:
+    from optimized_vector_store import OptimizedVectorStore as VectorStore
+except ImportError:
+    print("Using standard VectorStore")
+    from vector_store import VectorStore
+    
 class ChatService:
     def __init__(self, model: str = "gpt-4o"):
         """Initialize the chat service.
