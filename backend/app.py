@@ -120,7 +120,18 @@ def chat():
     
     try:
         # Generate response
+        print(f"Generating response for query: {query}")
+        print(f"Vector DB ready: {vector_db_ready}")
+        print(f"Chat service initialized: {chat_service is not None}")
+        
+        # Check if vector store is initialized
+        if not hasattr(chat_service.vector_store, 'vector_db') or chat_service.vector_store.vector_db is None:
+            print("Vector database not initialized, initializing now...")
+            chat_service.vector_store.get_or_create_vector_db()
+            print("Vector database initialized")
+        
         response = chat_service.generate_response(query, chat_histories[session_id])
+        print(f"Response generated successfully: {response[:50]}...")
         
         # Update chat history
         chat_histories[session_id].append({"role": "user", "content": query})
@@ -132,10 +143,22 @@ def chat():
             "status": "success"
         })
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
         print(f"Error generating response: {e}")
+        print(f"Traceback: {error_traceback}")
+        
+        # Try to provide more helpful error information
+        error_info = str(e)
+        if "No data found in the data directory" in error_info:
+            error_info = "No data files found. Please ensure the Data directory contains the required JSON files."
+        elif "OPENAI_API_KEY" in error_info:
+            error_info = "OpenAI API key is missing or invalid. Please check your environment variables."
+        
         return jsonify({
             "response": "Sorry, there was an error processing your request. Please try again later.",
-            "error": str(e),
+            "error": error_info,
+            "traceback": error_traceback,
             "status": "error"
         }), 500
 

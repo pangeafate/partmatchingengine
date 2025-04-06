@@ -496,13 +496,45 @@ class OptimizedVectorStore:
     
     def create_vector_db(self) -> Chroma:
         """Create a Chroma vector database from JSON files."""
-        # Get all JSON files
-        json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
+        # Check multiple possible data directories
+        possible_data_dirs = [
+            self.data_dir,  # Default (../Data or ./Data)
+            "./Data",  # Current directory
+            "../Data",  # Parent directory
+            "/opt/render/project/src/Data",  # Render mount path
+        ]
         
-        print(f"Found {len(json_files)} JSON files in {self.data_dir}")
+        json_files = []
+        used_data_dir = None
+        
+        # Try each possible data directory
+        for data_dir in possible_data_dirs:
+            print(f"Checking for JSON files in {data_dir}")
+            if os.path.exists(data_dir):
+                temp_files = glob.glob(os.path.join(data_dir, "*.json"))
+                if temp_files:
+                    json_files = temp_files
+                    used_data_dir = data_dir
+                    print(f"Found {len(json_files)} JSON files in {data_dir}")
+                    break
+                else:
+                    print(f"No JSON files found in {data_dir}")
+            else:
+                print(f"Directory {data_dir} does not exist")
+        
+        # Update the data directory if we found files in a different location
+        if used_data_dir and used_data_dir != self.data_dir:
+            print(f"Updating data directory from {self.data_dir} to {used_data_dir}")
+            self.data_dir = used_data_dir
+        
+        # List all files in the data directory for debugging
+        if used_data_dir and os.path.exists(used_data_dir):
+            print(f"All files in {used_data_dir}:")
+            for file in os.listdir(used_data_dir):
+                print(f"  - {file}")
         
         if not json_files:
-            print(f"Warning: No JSON files found in {self.data_dir}")
+            print(f"Warning: No JSON files found in any of the possible data directories")
             # Create a minimal sample data file
             sample_data = [
                 {

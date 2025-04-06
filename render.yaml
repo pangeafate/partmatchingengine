@@ -3,13 +3,18 @@ services:
   - type: web
     name: part-matching-engine-api
     env: python
-    buildCommand: mkdir -p Data && cd backend && pip install -r requirements.txt
-    startCommand: cd backend && gunicorn app:app --bind 0.0.0.0:$PORT
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
     envVars:
       - key: OPENAI_API_KEY
         sync: false
       - key: PORT
         value: 10000
+    # Ensure Data directory is included in the deployment
+    disk:
+      name: data-disk
+      mountPath: /opt/render/project/src/Data
+      sizeGB: 1
     
   # Frontend Static Site
   - type: web
