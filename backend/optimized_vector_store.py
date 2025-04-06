@@ -484,6 +484,77 @@ class OptimizedVectorStore:
         else:
             raise FileNotFoundError(f"Vector database not found at {self.db_path}")
     
+    def get_or_create_vector_db(self) -> Chroma:
+        """Get the vector database, creating it if it doesn't exist."""
+        try:
+            return self.load_vector_db()
+        except FileNotFoundError:
+            print("Vector database not found, creating a new one...")
+            vector_db = self.create_vector_db()
+            self.save_vector_db()
+            return vector_db
+    
+    def create_vector_db(self) -> Chroma:
+        """Create a Chroma vector database from JSON files."""
+        # Get all JSON files
+        json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
+        
+        print(f"Found {len(json_files)} JSON files in {self.data_dir}")
+        
+        if not json_files:
+            print(f"Warning: No JSON files found in {self.data_dir}")
+            # Create a minimal sample data file
+            sample_data = [
+                {
+                    "id": "sample1",
+                    "name": "Sample Part 1",
+                    "description": "This is a sample part for testing purposes.",
+                    "specifications": {
+                        "material": "Aluminum",
+                        "weight": "0.5 kg"
+                    },
+                    "manufacturer": "Sample Manufacturer"
+                }
+            ]
+            
+            # Create an empty vector database with the sample data
+            documents = self.prepare_documents(sample_data)
+            vector_db = Chroma.from_documents(
+                documents=documents,
+                embedding=self.embeddings,
+                persist_directory=self.db_path
+            )
+            self.vector_db = vector_db
+            return vector_db
+        
+        # Process the first file to create the initial database
+        first_file = json_files[0]
+        print(f"Creating vector database with {first_file}")
+        
+        try:
+            with open(first_file, 'r') as f:
+                data = json.load(f)
+            
+            if not isinstance(data, list):
+                data = [data]
+            
+            documents = self.prepare_documents(data)
+            vector_db = Chroma.from_documents(
+                documents=documents,
+                embedding=self.embeddings,
+                persist_directory=self.db_path
+            )
+            self.vector_db = vector_db
+            
+            # Process remaining files if any
+            for file_path in json_files[1:]:
+                self.process_single_file(file_path, batch_size=20)
+            
+            return vector_db
+        except Exception as e:
+            print(f"Error creating vector database: {e}")
+            raise
+    
     def similarity_search(self, query: str, k: int = 5):
         """Perform a similarity search on the vector database."""
         if not self.vector_db:
