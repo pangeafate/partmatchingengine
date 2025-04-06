@@ -31,10 +31,6 @@ env/
 # Vector database
 backend/chroma_db/
 
-# Data files
-Data/
-Data/*
-
 # IDE
 .idea/
 .vscode/

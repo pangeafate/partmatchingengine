@@ -267,7 +267,7 @@ class VectorStore:
     def create_vector_db(self) -> Chroma:
         """Create a Chroma vector database from JSON files."""
         # Check if the specific required file exists
-        required_file = os.path.join(self.data_dir, "circular-connector-backshells-and-accessories.json")
+        required_file = os.path.join(self.data_dir, "2circular-connector-backshells-and-accessories.json")
         if not os.path.exists(required_file):
             print(f"Error: Required data file not found: {required_file}")
             print(f"Current working directory: {os.getcwd()}")
@@ -279,7 +279,7 @@ class VectorStore:
             except Exception as e:
                 print(f"Error listing files: {e}")
             
-            raise ValueError("Required data file 'circular-connector-backshells-and-accessories.json' not found in the data directory")
+            raise ValueError("Required data file '2circular-connector-backshells-and-accessories.json' not found in the data directory")
         
         # Load data from JSON files
         data = self.load_json_files()
