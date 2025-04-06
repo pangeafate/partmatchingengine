@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,11 +14,41 @@ load_dotenv()
 app = Flask(__name__, static_folder='../frontend')
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for all API routes
 
-# Initialize chat service
-chat_service = ChatService()
-
 # Store chat histories for different sessions
 chat_histories = {}
+
+# Global variable to hold the chat service
+chat_service = None
+vector_db_ready = False
+
+# Initialize chat service in a background thread
+def init_chat_service():
+    global chat_service, vector_db_ready
+    try:
+        print("Initializing chat service...")
+        chat_service = ChatService()
+        vector_db_ready = True
+        print("Chat service initialized successfully")
+    except Exception as e:
+        print(f"Error initializing chat service: {e}")
+        # Try again with a fallback approach
+        try:
+            from optimized_vector_store import OptimizedVectorStore
+            print("Trying fallback initialization...")
+            # Create vector store without initializing the database
+            vector_store = OptimizedVectorStore()
+            # Initialize the chat service with the vector store
+            chat_service = ChatService(init_db=False)
+            chat_service.vector_store = vector_store
+            vector_db_ready = True
+            print("Chat service initialized with fallback approach")
+        except Exception as e:
+            print(f"Fallback initialization failed: {e}")
+
+# Start the initialization in a background thread
+init_thread = threading.Thread(target=init_chat_service)
+init_thread.daemon = True
+init_thread.start()
 
 # Serve the frontend static files
 @app.route('/', defaults={'path': ''})
@@ -51,15 +83,33 @@ def api_info():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
-    return jsonify({"status": "ok"})
+    global chat_service, vector_db_ready
+    
+    status = {
+        "status": "ok",
+        "vector_db_ready": vector_db_ready,
+        "chat_service_initialized": chat_service is not None,
+        "timestamp": time.time()
+    }
+    
+    return jsonify(status)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """Chat endpoint that handles user queries."""
+    global chat_service, vector_db_ready
+    
     data = request.json
     
     if not data or 'query' not in data:
         return jsonify({"error": "Query is required"}), 400
+    
+    # Check if chat service is ready
+    if not vector_db_ready or chat_service is None:
+        return jsonify({
+            "response": "The system is still initializing. Please try again in a moment.",
+            "status": "initializing"
+        }), 503  # Service Unavailable
     
     query = data['query']
     session_id = data.get('session_id', 'default')
@@ -68,17 +118,26 @@ def chat():
     if session_id not in chat_histories:
         chat_histories[session_id] = []
     
-    # Generate response
-    response = chat_service.generate_response(query, chat_histories[session_id])
-    
-    # Update chat history
-    chat_histories[session_id].append({"role": "user", "content": query})
-    chat_histories[session_id].append({"role": "assistant", "content": response})
-    
-    return jsonify({
-        "response": response,
-        "session_id": session_id
-    })
+    try:
+        # Generate response
+        response = chat_service.generate_response(query, chat_histories[session_id])
+        
+        # Update chat history
+        chat_histories[session_id].append({"role": "user", "content": query})
+        chat_histories[session_id].append({"role": "assistant", "content": response})
+        
+        return jsonify({
+            "response": response,
+            "session_id": session_id,
+            "status": "success"
+        })
+    except Exception as e:
+        print(f"Error generating response: {e}")
+        return jsonify({
+            "response": "Sorry, there was an error processing your request. Please try again later.",
+            "error": str(e),
+            "status": "error"
+        }), 500
 
 @app.route('/api/reset', methods=['POST'])
 def reset_chat():

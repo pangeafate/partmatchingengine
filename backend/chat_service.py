@@ -6,11 +6,12 @@ from langchain.schema import Document
 from optimized_vector_store import OptimizedVectorStore  # Use the optimized version
     
 class ChatService:
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-4o", init_db: bool = True):
         """Initialize the chat service.
         
         Args:
             model: The OpenAI model to use
+            init_db: Whether to initialize the vector database
         """
         self.model = model
         # Set OpenAI API key from environment variable
@@ -20,8 +21,11 @@ class ChatService:
         
         self.vector_store = OptimizedVectorStore()
         
-        # Initialize the vector database
-        self.vector_store.get_or_create_vector_db()
+        # Initialize the vector database if requested
+        if init_db:
+            print("Initializing vector database...")
+            self.vector_store.get_or_create_vector_db()
+            print("Vector database initialized")
     
     def format_context(self, documents: List[Document]) -> str:
         """Format retrieved documents into a context string for the LLM.
