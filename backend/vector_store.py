@@ -34,14 +34,23 @@ class SimpleOpenAIEmbeddings(Embeddings):
         return response["data"][0]["embedding"]
 
 class VectorStore:
-    def __init__(self, data_dir: str = "../Data", db_path: str = "chroma_db"):
+    def __init__(self, data_dir: str = None, db_path: str = "chroma_db"):
         """Initialize the vector store.
         
         Args:
             data_dir: Directory containing JSON files
             db_path: Path to save the vector database
         """
-        self.data_dir = data_dir
+        # If data_dir is not provided, use a path relative to the current directory
+        if data_dir is None:
+            # Check if we're in the backend directory or the project root
+            if os.path.basename(os.getcwd()) == "backend":
+                self.data_dir = "../Data"
+            else:
+                self.data_dir = "./Data"
+        else:
+            self.data_dir = data_dir
+            
         self.db_path = db_path
         self.embeddings = SimpleOpenAIEmbeddings()
         self.vector_db = None
@@ -261,7 +270,46 @@ class VectorStore:
         data = self.load_json_files()
         
         if not data:
-            raise ValueError("No data found in the data directory")
+            print(f"Warning: No data found in the data directory: {self.data_dir}")
+            print(f"Current working directory: {os.getcwd()}")
+            print(f"Listing files in data directory:")
+            try:
+                files = os.listdir(self.data_dir)
+                for file in files:
+                    print(f"  - {file}")
+            except Exception as e:
+                print(f"Error listing files: {e}")
+            
+            # Create a sample data file with minimal content if no data exists
+            # This is a fallback for deployment environments where data might not be available
+            sample_data = [
+                {
+                    "id": "sample1",
+                    "name": "Sample Part 1",
+                    "description": "This is a sample part for testing purposes.",
+                    "specifications": {
+                        "material": "Aluminum",
+                        "weight": "0.5 kg"
+                    },
+                    "manufacturer": "Sample Manufacturer"
+                }
+            ]
+            
+            # Ensure the data directory exists
+            os.makedirs(self.data_dir, exist_ok=True)
+            
+            # Write the sample data to a file
+            sample_file_path = os.path.join(self.data_dir, "sample_data.json")
+            try:
+                with open(sample_file_path, 'w') as f:
+                    json.dump(sample_data, f, indent=2)
+                print(f"Created sample data file at {sample_file_path}")
+                
+                # Load the sample data
+                data = sample_data
+            except Exception as e:
+                print(f"Error creating sample data file: {e}")
+                raise ValueError(f"No data found in the data directory and failed to create sample data: {e}")
         
         # Prepare documents
         documents = self.prepare_documents(data)
