@@ -4,23 +4,50 @@ import json
 import glob
 import time
 import gc
-from typing import List, Dict, Any
+import psutil
+import numpy as np
+from typing import List, Dict, Any, Generator, Optional
+from itertools import islice
 
 import openai
 from langchain.schema import Document
 from langchain.embeddings.base import Embeddings
 from langchain_community.vectorstores import Chroma
 
+# Memory monitoring function
+def get_memory_usage():
+    """Get current memory usage in MB."""
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / (1024 * 1024)  # Convert to MB
+
 class BatchedOpenAIEmbeddings(Embeddings):
-    """OpenAI embeddings with batched API calls."""
+    """OpenAI embeddings with batched API calls and memory optimization."""
     
-    def __init__(self, model="text-embedding-ada-002", batch_size=20):
+    def __init__(self, model="text-embedding-ada-002", batch_size=10, dimensions=None):
+        """
+        Initialize the embeddings.
+        
+        Args:
+            model: The OpenAI embedding model to use
+            batch_size: Number of texts to embed in a single API call
+            dimensions: If provided, truncate embeddings to this many dimensions
+        """
         self.model = model
         self.batch_size = batch_size
+        self.dimensions = dimensions
+        
+        # Use a smaller model if memory is a concern
+        if model == "text-embedding-ada-002" and dimensions is None:
+            print("Using full 1536-dimension embeddings. Set dimensions parameter to reduce memory usage.")
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of documents with batched API calls."""
         embeddings = []
+        
+        # Log memory usage
+        start_mem = get_memory_usage()
+        print(f"Memory before embedding: {start_mem:.2f} MB")
         
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i:i+self.batch_size]
@@ -30,18 +57,37 @@ class BatchedOpenAIEmbeddings(Embeddings):
                     input=batch
                 )
                 batch_embeddings = [item["embedding"] for item in response["data"]]
+                
+                # Truncate dimensions if specified
+                if self.dimensions is not None and self.dimensions < len(batch_embeddings[0]):
+                    batch_embeddings = [emb[:self.dimensions] for emb in batch_embeddings]
+                
                 embeddings.extend(batch_embeddings)
                 
                 # Add a small delay to avoid rate limits
                 if i + self.batch_size < len(texts):
                     time.sleep(0.1)
+                
+                # Log progress and memory usage periodically
+                if (i // self.batch_size) % 10 == 0:
+                    current_mem = get_memory_usage()
+                    print(f"Embedded {i+len(batch)}/{len(texts)} texts. Memory: {current_mem:.2f} MB")
+                    
+                # Force garbage collection periodically
+                if (i // self.batch_size) % 20 == 0:
+                    gc.collect()
                     
             except Exception as e:
                 print(f"Error embedding batch {i//self.batch_size}: {e}")
                 # For failed batches, return zero vectors as placeholders
-                batch_embeddings = [[0.0] * 1536 for _ in range(len(batch))]
+                vec_size = 1536 if self.dimensions is None else self.dimensions
+                batch_embeddings = [[0.0] * vec_size for _ in range(len(batch))]
                 embeddings.extend(batch_embeddings)
                 time.sleep(1)  # Longer delay after error
+        
+        # Log final memory usage
+        end_mem = get_memory_usage()
+        print(f"Memory after embedding: {end_mem:.2f} MB (change: {end_mem-start_mem:.2f} MB)")
         
         return embeddings
     
@@ -51,15 +97,45 @@ class BatchedOpenAIEmbeddings(Embeddings):
             model=self.model,
             input=text
         )
-        return response["data"][0]["embedding"]
+        embedding = response["data"][0]["embedding"]
+        
+        # Truncate dimensions if specified
+        if self.dimensions is not None and self.dimensions < len(embedding):
+            embedding = embedding[:self.dimensions]
+            
+        return embedding
 
 class OptimizedVectorStore:
-    def __init__(self, data_dir: str = "../Data", db_path: str = "chroma_db"):
-        """Initialize the vector store."""
+    def __init__(self, data_dir: str = "../Data", db_path: str = "chroma_db", 
+                 embedding_dimensions: int = 768, chunk_size: int = 500, chunk_overlap: int = 100):
+        """
+        Initialize the vector store with memory optimization parameters.
+        
+        Args:
+            data_dir: Directory containing JSON files
+            db_path: Path to save the vector database
+            embedding_dimensions: Number of dimensions to use for embeddings (smaller = less memory)
+            chunk_size: Size of text chunks in characters
+            chunk_overlap: Overlap between chunks in characters
+        """
         self.data_dir = data_dir
         self.db_path = db_path
-        self.embeddings = BatchedOpenAIEmbeddings(batch_size=20)
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        
+        # Use memory-optimized embeddings
+        self.embeddings = BatchedOpenAIEmbeddings(
+            batch_size=10,  # Smaller batch size to reduce memory usage
+            dimensions=embedding_dimensions  # Truncate embeddings to reduce memory usage
+        )
+        
         self.vector_db = None
+        
+        # Log initial memory usage
+        mem = get_memory_usage()
+        print(f"Initial memory usage: {mem:.2f} MB")
+        print(f"Using {embedding_dimensions}-dimension embeddings (vs. 1536 default)")
+        print(f"Using chunk size of {chunk_size} with {chunk_overlap} overlap")
     
     def prepare_documents(self, data: List[Dict[str, Any]]) -> List[Document]:
         """Convert JSON data to Document objects for the vector store."""
@@ -177,8 +253,8 @@ class OptimizedVectorStore:
                 documents.append(page_doc)
                 
                 # For larger pages, create additional overlapping chunks
-                if len(page_content) > 800:
-                    chunks = self._chunk_text(page_content, chunk_size=800, overlap=200)
+                if len(page_content) > self.chunk_size / 2:  # Only chunk if content is at least half the chunk size
+                    chunks = self._chunk_text(page_content)  # Use instance variables for chunk size and overlap
                     for i, chunk in enumerate(chunks):
                         chunk_metadata = page_metadata.copy()
                         chunk_metadata["chunk_index"] = i
@@ -209,8 +285,17 @@ class OptimizedVectorStore:
         
         return documents
     
-    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
+    def _chunk_text(self, text: str, chunk_size: int = None, overlap: int = None) -> List[str]:
         """Split text into overlapping chunks of specified size."""
+        # Use instance variables if not specified
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if overlap is None:
+            overlap = self.chunk_overlap
+            
+        # Log chunking parameters
+        print(f"Chunking text of length {len(text)} with size={chunk_size}, overlap={overlap}")
+        
         if len(text) <= chunk_size:
             return [text]
         
@@ -235,11 +320,19 @@ class OptimizedVectorStore:
             
             chunks.append(text[start:end])
             start = end - overlap  # Create overlap between chunks
+            
+            # Force garbage collection periodically during chunking of large texts
+            if len(chunks) % 100 == 0:
+                gc.collect()
         
         return chunks
     
-    def add_documents_in_batches(self, documents, batch_size=50):
+    def add_documents_in_batches(self, documents, batch_size=20):
         """Add documents to the vector store in batches."""
+        # Log memory usage
+        start_mem = get_memory_usage()
+        print(f"Memory before adding documents: {start_mem:.2f} MB")
+        
         # Initialize vector store if needed
         if self.vector_db is None:
             try:
@@ -248,7 +341,7 @@ class OptimizedVectorStore:
             except FileNotFoundError:
                 print("Creating new vector database...")
                 # Create with a small initial batch
-                initial_batch = documents[:min(batch_size, len(documents))]
+                initial_batch = documents[:min(10, len(documents))]  # Use smaller initial batch
                 self.vector_db = Chroma.from_documents(
                     documents=initial_batch,
                     embedding=self.embeddings,
@@ -256,7 +349,7 @@ class OptimizedVectorStore:
                 )
                 self.save_vector_db()
                 # Remove the initial batch from documents
-                documents = documents[min(batch_size, len(documents)):]
+                documents = documents[min(10, len(documents)):]
         
         # Process remaining documents in batches
         total_batches = (len(documents) + batch_size - 1) // batch_size
@@ -271,24 +364,37 @@ class OptimizedVectorStore:
                 # Add batch to vector store
                 self.vector_db.add_documents(batch)
                 
-                # Save periodically (e.g., every 5 batches)
-                if batch_num % 5 == 0 or batch_num == total_batches:
+                # Save more frequently (every 2 batches) to manage memory
+                if batch_num % 2 == 0 or batch_num == total_batches:
                     self.save_vector_db()
                     print(f"Saved vector database after batch {batch_num}")
                     # Force garbage collection
                     gc.collect()
+                
+                # Log memory usage periodically
+                if batch_num % 5 == 0:
+                    current_mem = get_memory_usage()
+                    print(f"Memory after {batch_num} batches: {current_mem:.2f} MB")
                     
             except Exception as e:
                 print(f"Error in batch {batch_num}: {e}")
                 # Continue with next batch
+        
+        # Log final memory usage
+        end_mem = get_memory_usage()
+        print(f"Memory after adding all documents: {end_mem:.2f} MB (change: {end_mem-start_mem:.2f} MB)")
     
-    def process_single_file(self, file_path, batch_size=50):
+    def process_single_file(self, file_path, batch_size=20):
         """Process a single file and add it to the vector database."""
         if not os.path.exists(file_path):
             print(f"File not found: {file_path}")
             return
             
         print(f"Processing file: {os.path.basename(file_path)}")
+        
+        # Log memory usage
+        start_mem = get_memory_usage()
+        print(f"Memory before processing file: {start_mem:.2f} MB")
         
         try:
             # Load the file
@@ -301,26 +407,63 @@ class OptimizedVectorStore:
                 
             print(f"Loaded {len(data)} items from {os.path.basename(file_path)}")
             
+            # Log memory after loading
+            after_load_mem = get_memory_usage()
+            print(f"Memory after loading file: {after_load_mem:.2f} MB (change: {after_load_mem-start_mem:.2f} MB)")
+            
             # Prepare documents
             documents = self.prepare_documents(data)
             print(f"Created {len(documents)} document chunks")
             
+            # Clear data to free memory
+            data = None
+            gc.collect()
+            
+            # Log memory after document preparation
+            after_prep_mem = get_memory_usage()
+            print(f"Memory after document preparation: {after_prep_mem:.2f} MB")
+            
             # Add documents in batches
             self.add_documents_in_batches(documents, batch_size)
+            
+            # Clear documents to free memory
+            documents = None
+            gc.collect()
+            
+            # Log final memory usage
+            end_mem = get_memory_usage()
+            print(f"Memory after processing file: {end_mem:.2f} MB (total change: {end_mem-start_mem:.2f} MB)")
             
             print(f"Completed processing {os.path.basename(file_path)}")
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
     
-    def process_all_files_in_batches(self, batch_size=50):
+    def process_all_files_in_batches(self, batch_size=20):
         """Process all files one at a time."""
         # Get all JSON files
         json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
         
-        for file_path in json_files:
+        print(f"Found {len(json_files)} JSON files in {self.data_dir}")
+        
+        # Log initial memory usage
+        start_mem = get_memory_usage()
+        print(f"Initial memory usage: {start_mem:.2f} MB")
+        
+        for i, file_path in enumerate(json_files):
+            print(f"\nProcessing file {i+1}/{len(json_files)}: {os.path.basename(file_path)}")
             self.process_single_file(file_path, batch_size)
-            # Force garbage collection
+            
+            # Force garbage collection between files
             gc.collect()
+            
+            # Log memory usage after each file
+            current_mem = get_memory_usage()
+            print(f"Memory after processing file {i+1}: {current_mem:.2f} MB")
+        
+        # Log final memory usage
+        end_mem = get_memory_usage()
+        print(f"\nFinal memory usage: {end_mem:.2f} MB (total change: {end_mem-start_mem:.2f} MB)")
+        print("All files processed successfully")
     
     def save_vector_db(self):
         """Save the vector database to disk."""
