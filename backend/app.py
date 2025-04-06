@@ -33,10 +33,10 @@ def init_chat_service():
         print(f"Error initializing chat service: {e}")
         # Try again with a fallback approach
         try:
-            from optimized_vector_store import OptimizedVectorStore
+            from vector_store import VectorStore
             print("Trying fallback initialization...")
             # Create vector store without initializing the database
-            vector_store = OptimizedVectorStore()
+            vector_store = VectorStore()
             # Initialize the chat service with the vector store
             chat_service = ChatService(init_db=False)
             chat_service.vector_store = vector_store

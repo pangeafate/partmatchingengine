@@ -3,7 +3,7 @@ import json
 import os
 import openai
 from langchain.schema import Document
-from optimized_vector_store import OptimizedVectorStore  # Use the optimized version
+from vector_store import VectorStore  # Use the original version
     
 class ChatService:
     def __init__(self, model: str = "gpt-4o", init_db: bool = True):
@@ -19,7 +19,7 @@ class ChatService:
         if not openai.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         
-        self.vector_store = OptimizedVectorStore()
+        self.vector_store = VectorStore()
         
         # Initialize the vector database if requested
         if init_db:

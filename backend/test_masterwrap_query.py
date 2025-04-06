@@ -1,10 +1,10 @@
-# test_optimized_db.py
-from optimized_vector_store import OptimizedVectorStore
+# test_masterwrap_query.py
+from vector_store import VectorStore
 
 def test_masterwrap_query():
     """Test if MasterWrap is findable in the vector database."""
-    print("Initializing OptimizedVectorStore...")
-    store = OptimizedVectorStore()
+    print("Initializing VectorStore...")
+    store = VectorStore()
     
     try:
         print("Testing query for 'MasterWrap'...")
