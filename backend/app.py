@@ -104,6 +104,10 @@ def chat():
     if not data or 'query' not in data:
         return jsonify({"error": "Query is required"}), 400
     
+    # Get session_id and query from request data
+    session_id = data.get('session_id', 'default')
+    query = data['query']
+    
     # Check if chat service is ready
     if not vector_db_ready or chat_service is None:
         # Return a sample response instead of an error during initialization
@@ -127,9 +131,6 @@ def chat():
             "session_id": session_id,
             "status": "initializing_with_sample"
         }), 200  # Return 200 OK instead of 503 to allow the frontend to display the response
-    
-    query = data['query']
-    session_id = data.get('session_id', 'default')
     
     # Get or initialize chat history for this session
     if session_id not in chat_histories:
