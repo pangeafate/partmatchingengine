@@ -107,7 +107,7 @@ class BatchedOpenAIEmbeddings(Embeddings):
 
 class OptimizedVectorStore:
     def __init__(self, data_dir: str = "../Data", db_path: str = "chroma_db", 
-                 embedding_dimensions: int = 768, chunk_size: int = 500, chunk_overlap: int = 100):
+                 embedding_dimensions: int = 384, chunk_size: int = 300, chunk_overlap: int = 50):
         """
         Initialize the vector store with memory optimization parameters.
         
