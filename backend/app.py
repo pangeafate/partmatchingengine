@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, url_for
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -17,6 +17,19 @@ chat_service = ChatService()
 
 # Store chat histories for different sessions
 chat_histories = {}
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint that returns API information."""
+    return jsonify({
+        "status": "online",
+        "service": "Part Matching Engine API",
+        "endpoints": {
+            "health_check": "/api/health",
+            "chat": "/api/chat",
+            "reset_chat": "/api/reset"
+        }
+    })
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
