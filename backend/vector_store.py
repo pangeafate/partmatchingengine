@@ -266,11 +266,10 @@ class VectorStore:
     
     def create_vector_db(self) -> Chroma:
         """Create a Chroma vector database from JSON files."""
-        # Load data from JSON files
-        data = self.load_json_files()
-        
-        if not data:
-            print(f"Warning: No data found in the data directory: {self.data_dir}")
+        # Check if the specific required file exists
+        required_file = os.path.join(self.data_dir, "circular-connector-backshells-and-accessories.json")
+        if not os.path.exists(required_file):
+            print(f"Error: Required data file not found: {required_file}")
             print(f"Current working directory: {os.getcwd()}")
             print(f"Listing files in data directory:")
             try:
@@ -280,36 +279,13 @@ class VectorStore:
             except Exception as e:
                 print(f"Error listing files: {e}")
             
-            # Create a sample data file with minimal content if no data exists
-            # This is a fallback for deployment environments where data might not be available
-            sample_data = [
-                {
-                    "id": "sample1",
-                    "name": "Sample Part 1",
-                    "description": "This is a sample part for testing purposes.",
-                    "specifications": {
-                        "material": "Aluminum",
-                        "weight": "0.5 kg"
-                    },
-                    "manufacturer": "Sample Manufacturer"
-                }
-            ]
-            
-            # Ensure the data directory exists
-            os.makedirs(self.data_dir, exist_ok=True)
-            
-            # Write the sample data to a file
-            sample_file_path = os.path.join(self.data_dir, "sample_data.json")
-            try:
-                with open(sample_file_path, 'w') as f:
-                    json.dump(sample_data, f, indent=2)
-                print(f"Created sample data file at {sample_file_path}")
-                
-                # Load the sample data
-                data = sample_data
-            except Exception as e:
-                print(f"Error creating sample data file: {e}")
-                raise ValueError(f"No data found in the data directory and failed to create sample data: {e}")
+            raise ValueError("Required data file 'circular-connector-backshells-and-accessories.json' not found in the data directory")
+        
+        # Load data from JSON files
+        data = self.load_json_files()
+        
+        if not data:
+            raise ValueError("No data found in the data directory")
         
         # Prepare documents
         documents = self.prepare_documents(data)
