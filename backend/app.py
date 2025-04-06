@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, redirect, url_for
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -9,7 +9,7 @@ from chat_service import ChatService
 load_dotenv()
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../frontend')
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for all API routes
 
 # Initialize chat service
@@ -18,9 +18,26 @@ chat_service = ChatService()
 # Store chat histories for different sessions
 chat_histories = {}
 
-@app.route('/', methods=['GET'])
-def root():
-    """Root endpoint that returns API information."""
+# Serve the frontend static files
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve the frontend static files."""
+    if path == "":
+        # Serve index.html for the root path
+        return send_from_directory(app.static_folder, 'index.html')
+    
+    # Try to serve the requested file
+    try:
+        return send_from_directory(app.static_folder, path)
+    except:
+        # If the file doesn't exist, serve index.html for client-side routing
+        return send_from_directory(app.static_folder, 'index.html')
+
+# API endpoint that returns API information
+@app.route('/api', methods=['GET'])
+def api_info():
+    """API information endpoint."""
     return jsonify({
         "status": "online",
         "service": "Part Matching Engine API",

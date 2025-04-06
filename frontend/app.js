@@ -5,7 +5,8 @@ const chatMessages = document.getElementById('chat-messages');
 const resetButton = document.getElementById('reset-chat');
 
 // API Configuration
-const API_URL = process.env.API_URL || 'http://localhost:5002/api';
+// Use relative URLs to work in both development and production
+const API_URL = '/api';
 let sessionId = null;
 
 // Helper Functions
@@ -168,4 +169,5 @@ async function checkHealth() {
 // Run on page load
 window.addEventListener('DOMContentLoaded', () => {
     checkHealth();
+    console.log('Using API URL:', API_URL);
 });
