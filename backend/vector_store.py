@@ -47,7 +47,7 @@ class SimpleOpenAIEmbeddings(Embeddings):
         return embedding
 
 class VectorStore:
-    def __init__(self, data_dir: str = None, db_path: str = "chroma_db", embedding_dimensions: int = 384):
+    def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
         """Initialize the vector store.
         
         Args:
@@ -57,17 +57,47 @@ class VectorStore:
         """
         # If data_dir is not provided, use a path relative to the current directory
         if data_dir is None:
-            # Check if we're in the backend directory or the project root
-            if os.path.basename(os.getcwd()) == "backend":
+            # First check for Render environment
+            render_data_path = "/data"
+            if os.path.exists(render_data_path):
+                self.data_dir = f"{render_data_path}/source"
+                # Ensure directory exists
+                os.makedirs(self.data_dir, exist_ok=True)
+                print(f"Using Render data directory: {self.data_dir}")
+            elif os.path.basename(os.getcwd()) == "backend":
                 self.data_dir = "../Data"
+                print(f"Using relative backend data directory: {self.data_dir}")
             else:
                 self.data_dir = "./Data"
+                print(f"Using local data directory: {self.data_dir}")
         else:
             self.data_dir = data_dir
-            
-        self.db_path = db_path
+            print(f"Using provided data directory: {self.data_dir}")
+        
+        # If db_path is not provided, check for Render environment first
+        if db_path is None:
+            render_db_path = "/data/chroma_db"
+            if os.path.exists("/data"):
+                self.db_path = render_db_path
+                print(f"Using Render database path: {self.db_path}")
+            else:
+                self.db_path = "chroma_db"
+                print(f"Using local database path: {self.db_path}")
+        else:
+            self.db_path = db_path
+            print(f"Using provided database path: {self.db_path}")
+        
+        # Ensure the db_path directory exists
+        os.makedirs(self.db_path, exist_ok=True)
+        
         self.embeddings = SimpleOpenAIEmbeddings(dimensions=embedding_dimensions)
         self.vector_db = None
+        
+        # Print environment info for debugging
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"Data directory exists: {os.path.exists(self.data_dir)}")
+        print(f"Database directory exists: {os.path.exists(self.db_path)}")
+        print(f"Database directory is writable: {os.access(self.db_path, os.W_OK)}")
     
     def load_json_files(self) -> List[Dict[str, Any]]:
         """Load all JSON files from the data directory."""
@@ -79,7 +109,19 @@ class VectorStore:
         print(f"Loading JSON files from {self.data_dir}")
         print(f"Found {len(json_files)} JSON files")
         
+        # List all files in data directory for debugging
+        try:
+            all_files = os.listdir(self.data_dir)
+            print(f"All files in data directory: {all_files}")
+        except Exception as e:
+            print(f"Error listing files in data directory: {e}")
+        
         for file_path in json_files:
+            # Skip test_data.json as requested
+            if os.path.basename(file_path) == "test_data.json":
+                print(f"Skipping test file: {file_path}")
+                continue
+                
             print(f"Loading file: {file_path}")
             try:
                 with open(file_path, 'r') as f:
@@ -312,6 +354,9 @@ class VectorStore:
         )
         self.vector_db = vector_db
         
+        # Print information about the created database
+        print(f"Vector database created with {len(documents)} documents")
+        
         return vector_db
     
     def save_vector_db(self) -> None:
@@ -325,12 +370,22 @@ class VectorStore:
     def load_vector_db(self) -> Chroma:
         """Load the vector database from disk."""
         if os.path.exists(self.db_path):
-            self.vector_db = Chroma(
-                persist_directory=self.db_path,
-                embedding_function=self.embeddings
-            )
-            return self.vector_db
+            print(f"Loading vector database from {self.db_path}")
+            try:
+                self.vector_db = Chroma(
+                    persist_directory=self.db_path,
+                    embedding_function=self.embeddings
+                )
+                # Print number of documents in the database for debugging
+                if hasattr(self.vector_db, '_collection'):
+                    count = self.vector_db._collection.count()
+                    print(f"Vector database loaded with {count} documents")
+                return self.vector_db
+            except Exception as e:
+                print(f"Error loading vector database: {e}")
+                raise
         else:
+            print(f"Vector database not found at {self.db_path}")
             raise FileNotFoundError(f"Vector database not found at {self.db_path}")
     
     def get_or_create_vector_db(self) -> Chroma:
@@ -338,6 +393,14 @@ class VectorStore:
         try:
             return self.load_vector_db()
         except FileNotFoundError:
+            print("Creating new vector database")
+            vector_db = self.create_vector_db()
+            self.save_vector_db()
+            return vector_db
+        except Exception as e:
+            print(f"Error in get_or_create_vector_db: {e}")
+            # Try to create a new database as fallback
+            print("Attempting to create new vector database due to loading error")
             vector_db = self.create_vector_db()
             self.save_vector_db()
             return vector_db

@@ -1,11 +1,35 @@
 import os
 import threading
 import time
+import logging
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
 from chat_service import ChatService
+
+# Set up logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Create a file handler for persistent logging
+try:
+    if os.path.exists('/data'):
+        log_file = '/data/app.log'
+    else:
+        log_file = 'app.log'
+    
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.info(f"Logging to {log_file}")
+except Exception as e:
+    logger.error(f"Failed to set up file logging: {e}")
 
 # Load environment variables
 load_dotenv()
@@ -25,25 +49,57 @@ vector_db_ready = False
 def init_chat_service():
     global chat_service, vector_db_ready
     try:
-        print("Initializing chat service...")
+        logger.info("Initializing chat service...")
+        
+        # Log environment information
+        logger.info(f"Current working directory: {os.getcwd()}")
+        
+        # Check for OpenAI API key
+        api_key_exists = bool(os.environ.get("OPENAI_API_KEY"))
+        logger.info(f"OpenAI API key exists: {api_key_exists}")
+        
+        # Check for Data directory
+        data_path = "/data/source" if os.path.exists("/data") else "../Data" if os.path.basename(os.getcwd()) == "backend" else "./Data"
+        logger.info(f"Data directory path: {data_path}")
+        logger.info(f"Data directory exists: {os.path.exists(data_path)}")
+        
+        # Check for files in Data directory
+        try:
+            if os.path.exists(data_path):
+                files = os.listdir(data_path)
+                logger.info(f"Files in data directory: {files}")
+        except Exception as e:
+            logger.error(f"Error listing data directory: {e}")
+        
+        # Initialize chat service
         chat_service = ChatService()
         vector_db_ready = True
-        print("Chat service initialized successfully")
+        logger.info("Chat service initialized successfully")
     except Exception as e:
-        print(f"Error initializing chat service: {e}")
+        logger.error(f"Error initializing chat service: {e}")
+        
         # Try again with a fallback approach
         try:
             from vector_store import VectorStore
-            print("Trying fallback initialization...")
+            logger.info("Trying fallback initialization...")
+            
             # Create vector store without initializing the database
             vector_store = VectorStore()
+            
             # Initialize the chat service with the vector store
             chat_service = ChatService(init_db=False)
             chat_service.vector_store = vector_store
+            
+            # Try to initialize the vector database now
+            logger.info("Initializing vector database in fallback...")
+            chat_service.vector_store.get_or_create_vector_db()
+            
             vector_db_ready = True
-            print("Chat service initialized with fallback approach")
+            logger.info("Chat service initialized with fallback approach")
         except Exception as e:
-            print(f"Fallback initialization failed: {e}")
+            logger.error(f"Fallback initialization failed: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Start the initialization in a background thread
 init_thread = threading.Thread(target=init_chat_service)
@@ -85,12 +141,44 @@ def health_check():
     """Health check endpoint."""
     global chat_service, vector_db_ready
     
+    # Check if the data directory exists and is accessible
+    if os.path.exists("/data"):
+        data_path = "/data/source"
+    elif os.path.basename(os.getcwd()) == "backend":
+        data_path = "../Data"
+    else:
+        data_path = "./Data"
+    
+    # Check database path
+    if os.path.exists("/data"):
+        db_path = "/data/chroma_db"
+    else:
+        db_path = "chroma_db"
+    
     status = {
         "status": "ok",
         "vector_db_ready": vector_db_ready,
         "chat_service_initialized": chat_service is not None,
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "environment": {
+            "current_dir": os.getcwd(),
+            "data_dir_exists": os.path.exists(data_path),
+            "db_dir_exists": os.path.exists(db_path),
+            "openai_api_key_set": bool(os.environ.get("OPENAI_API_KEY"))
+        }
     }
+    
+    # Add more detailed information if chat service is initialized
+    if chat_service is not None and hasattr(chat_service, "vector_store"):
+        try:
+            status["vector_store_info"] = {
+                "data_dir": chat_service.vector_store.data_dir,
+                "db_path": chat_service.vector_store.db_path,
+                "data_dir_exists": os.path.exists(chat_service.vector_store.data_dir),
+                "db_path_exists": os.path.exists(chat_service.vector_store.db_path)
+            }
+        except Exception as e:
+            status["vector_store_error"] = str(e)
     
     return jsonify(status)
 
@@ -106,6 +194,7 @@ def chat():
     
     # Check if chat service is ready
     if not vector_db_ready or chat_service is None:
+        logger.warning("Chat service not ready yet")
         return jsonify({
             "response": "The system is still initializing. Please try again in a moment.",
             "status": "initializing"
@@ -120,18 +209,35 @@ def chat():
     
     try:
         # Generate response
-        print(f"Generating response for query: {query}")
-        print(f"Vector DB ready: {vector_db_ready}")
-        print(f"Chat service initialized: {chat_service is not None}")
+        logger.info(f"Generating response for query: {query}")
+        logger.info(f"Vector DB ready: {vector_db_ready}")
+        logger.info(f"Chat service initialized: {chat_service is not None}")
+        
+        # Log environment information
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"Data directory path: {chat_service.vector_store.data_dir}")
+        logger.info(f"Data directory exists: {os.path.exists(chat_service.vector_store.data_dir)}")
+        logger.info(f"Database path: {chat_service.vector_store.db_path}")
+        logger.info(f"Database path exists: {os.path.exists(chat_service.vector_store.db_path)}")
+        
+        # Try to list files in the data directory
+        try:
+            data_files = os.listdir(chat_service.vector_store.data_dir)
+            logger.info(f"Files in data directory: {data_files}")
+        except Exception as e:
+            logger.error(f"Error listing data directory: {e}")
+        
+        # Check OpenAI API key
+        logger.info(f"OpenAI API key exists: {bool(os.environ.get('OPENAI_API_KEY'))}")
         
         # Check if vector store is initialized
         if not hasattr(chat_service.vector_store, 'vector_db') or chat_service.vector_store.vector_db is None:
-            print("Vector database not initialized, initializing now...")
+            logger.info("Vector database not initialized, initializing now...")
             chat_service.vector_store.get_or_create_vector_db()
-            print("Vector database initialized")
+            logger.info("Vector database initialized")
         
         response = chat_service.generate_response(query, chat_histories[session_id])
-        print(f"Response generated successfully: {response[:50]}...")
+        logger.info(f"Response generated successfully: {response[:50]}...")
         
         # Update chat history
         chat_histories[session_id].append({"role": "user", "content": query})
@@ -145,8 +251,8 @@ def chat():
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
-        print(f"Error generating response: {e}")
-        print(f"Traceback: {error_traceback}")
+        logger.error(f"Error generating response: {e}")
+        logger.error(f"Traceback: {error_traceback}")
         
         # Try to provide more helpful error information
         error_info = str(e)

@@ -1,10 +1,14 @@
+import logging
 from typing import List, Dict, Any
 import json
 import os
 import openai
 from langchain.schema import Document
 from vector_store import VectorStore  # Use the original version
-    
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
 class ChatService:
     def __init__(self, model: str = "gpt-4o", init_db: bool = True):
         """Initialize the chat service.
@@ -17,15 +21,23 @@ class ChatService:
         # Set OpenAI API key from environment variable
         openai.api_key = os.environ.get("OPENAI_API_KEY")
         if not openai.api_key:
+            logger.error("OPENAI_API_KEY environment variable is not set")
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         
+        logger.info(f"Initializing vector store")
         self.vector_store = VectorStore()
         
         # Initialize the vector database if requested
         if init_db:
-            print("Initializing vector database...")
-            self.vector_store.get_or_create_vector_db()
-            print("Vector database initialized")
+            try:
+                logger.info("Initializing vector database...")
+                self.vector_store.get_or_create_vector_db()
+                logger.info("Vector database initialized")
+            except Exception as e:
+                logger.error(f"Error initializing vector database: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                # Continue without raising - we'll try again when needed
     
     def format_context(self, documents: List[Document]) -> str:
         """Format retrieved documents into a context string for the LLM.
@@ -123,7 +135,8 @@ class ChatService:
                 formatted_content += f"Manufacturer: {content.get('manufacturer', 'N/A')}\n"
                 
                 context_parts.append(formatted_content)
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Error parsing JSON document: {e}")
                 # If not valid JSON, use as is
                 context_parts.append(f"Item {i}:\n{doc.page_content}\n")
         
@@ -140,8 +153,26 @@ class ChatService:
         if chat_history is None:
             chat_history = []
         
+        # Ensure vector database is initialized
+        if not hasattr(self.vector_store, 'vector_db') or self.vector_store.vector_db is None:
+            logger.info("Vector database not initialized, initializing now...")
+            try:
+                self.vector_store.get_or_create_vector_db()
+                logger.info("Vector database initialized")
+            except Exception as e:
+                logger.error(f"Error initializing vector database: {e}")
+                return "I'm having trouble accessing the knowledge base. Please try again later."
+        
         # Retrieve relevant documents from the vector store (increased to 10 for better coverage)
-        relevant_docs = self.vector_store.similarity_search(query, k=10)
+        try:
+            logger.info(f"Performing similarity search for query: {query}")
+            relevant_docs = self.vector_store.similarity_search(query, k=10)
+            logger.info(f"Found {len(relevant_docs)} relevant documents")
+        except Exception as e:
+            logger.error(f"Error during similarity search: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return "I encountered an issue searching for information. Please try again later."
         
         # Simple re-ranking: prioritize documents with titles that match query terms
         query_terms = set(query.lower().split())
@@ -183,7 +214,12 @@ class ChatService:
         relevant_docs = relevant_docs[:7]
         
         # Format the retrieved documents into context
-        context = self.format_context(relevant_docs)
+        try:
+            context = self.format_context(relevant_docs)
+            logger.info(f"Formatted context length: {len(context)}")
+        except Exception as e:
+            logger.error(f"Error formatting context: {e}")
+            context = "Error retrieving context information."
         
         # Prepare the messages for the OpenAI API with detailed instructions
         messages = [
@@ -220,11 +256,18 @@ class ChatService:
         messages.append({"role": "user", "content": query})
         
         # Generate a response using the OpenAI API
-        response = openai.ChatCompletion.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.3,  # Lower temperature for more precise answers
-            max_tokens=1000
-        )
-        
-        return response.choices[0].message['content']
+        try:
+            logger.info(f"Sending request to OpenAI API")
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.3,  # Lower temperature for more precise answers
+                max_tokens=1000
+            )
+            logger.info(f"Got response from OpenAI API")
+            return response.choices[0].message['content']
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return "I'm having trouble generating a response right now. Please try again later."

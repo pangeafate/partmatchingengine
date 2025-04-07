@@ -3,17 +3,23 @@ services:
   - type: web
     name: part-matching-engine-api
     env: python
-    buildCommand: cd backend && pip install -r requirements.txt
+    buildCommand: |
+      cd backend && pip install -r requirements.txt
+      mkdir -p /data/source
+      mkdir -p /data/chroma_db
+      cp -r ./Data/* /data/source/ || true
+      echo "Files copied to persistent storage"
+      cd /data/source && ls -la
     startCommand: cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
     envVars:
       - key: OPENAI_API_KEY
         sync: false
       - key: PORT
         value: 10000
-    # Ensure Data directory is included in the deployment
+    # Ensure Data directory is mounted properly
     disk:
       name: data-disk
-      mountPath: /opt/render/project/src/Data
+      mountPath: /data
       sizeGB: 1
     
   # Frontend Static Site
