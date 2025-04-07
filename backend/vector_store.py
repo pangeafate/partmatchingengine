@@ -11,8 +11,9 @@ from langchain.embeddings.base import Embeddings
 class SimpleOpenAIEmbeddings(Embeddings):
     """A simple implementation of OpenAI embeddings that doesn't require tiktoken."""
     
-    def __init__(self, model="text-embedding-ada-002"):
+    def __init__(self, model="text-embedding-ada-002", dimensions=None):
         self.model = model
+        self.dimensions = dimensions
     
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of documents using the OpenAI API."""
@@ -22,7 +23,13 @@ class SimpleOpenAIEmbeddings(Embeddings):
                 model=self.model,
                 input=text
             )
-            embeddings.append(response["data"][0]["embedding"])
+            embedding = response["data"][0]["embedding"]
+            
+            # Truncate dimensions if specified
+            if self.dimensions is not None and self.dimensions < len(embedding):
+                embedding = embedding[:self.dimensions]
+                
+            embeddings.append(embedding)
         return embeddings
     
     def embed_query(self, text: str) -> List[float]:
@@ -31,15 +38,22 @@ class SimpleOpenAIEmbeddings(Embeddings):
             model=self.model,
             input=text
         )
-        return response["data"][0]["embedding"]
+        embedding = response["data"][0]["embedding"]
+        
+        # Truncate dimensions if specified
+        if self.dimensions is not None and self.dimensions < len(embedding):
+            embedding = embedding[:self.dimensions]
+            
+        return embedding
 
 class VectorStore:
-    def __init__(self, data_dir: str = None, db_path: str = "chroma_db"):
+    def __init__(self, data_dir: str = None, db_path: str = "chroma_db", embedding_dimensions: int = 384):
         """Initialize the vector store.
         
         Args:
             data_dir: Directory containing JSON files
             db_path: Path to save the vector database
+            embedding_dimensions: Number of dimensions to use for embeddings (smaller = less memory)
         """
         # If data_dir is not provided, use a path relative to the current directory
         if data_dir is None:
@@ -52,7 +66,7 @@ class VectorStore:
             self.data_dir = data_dir
             
         self.db_path = db_path
-        self.embeddings = SimpleOpenAIEmbeddings()
+        self.embeddings = SimpleOpenAIEmbeddings(dimensions=embedding_dimensions)
         self.vector_db = None
     
     def load_json_files(self) -> List[Dict[str, Any]]:
