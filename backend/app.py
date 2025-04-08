@@ -45,7 +45,7 @@ chat_histories = {}
 chat_service = None
 vector_db_ready = False
 
-# Initialize chat service in a background thread
+# Initialize chat service immediately instead of in background
 def init_chat_service():
     global chat_service, vector_db_ready
     try:
@@ -58,23 +58,11 @@ def init_chat_service():
         api_key_exists = bool(os.environ.get("OPENAI_API_KEY"))
         logger.info(f"OpenAI API key exists: {api_key_exists}")
         
-        # Check for Data directory
-        data_path = "/data/source" if os.path.exists("/data") else "../Data" if os.path.basename(os.getcwd()) == "backend" else "./Data"
-        logger.info(f"Data directory path: {data_path}")
-        logger.info(f"Data directory exists: {os.path.exists(data_path)}")
-        
-        # Check for files in Data directory
-        try:
-            if os.path.exists(data_path):
-                files = os.listdir(data_path)
-                logger.info(f"Files in data directory: {files}")
-        except Exception as e:
-            logger.error(f"Error listing data directory: {e}")
-        
         # Initialize chat service
         chat_service = ChatService()
         vector_db_ready = True
         logger.info("Chat service initialized successfully")
+        return True
     except Exception as e:
         logger.error(f"Error initializing chat service: {e}")
         
@@ -83,8 +71,8 @@ def init_chat_service():
             from vector_store import VectorStore
             logger.info("Trying fallback initialization...")
             
-            # Create vector store without initializing the database
-            vector_store = VectorStore()
+            # Create vector store with explicit paths
+            vector_store = VectorStore(data_dir="/data/source", db_path="/data/chroma_db")
             
             # Initialize the chat service with the vector store
             chat_service = ChatService(init_db=False)
@@ -96,15 +84,15 @@ def init_chat_service():
             
             vector_db_ready = True
             logger.info("Chat service initialized with fallback approach")
+            return True
         except Exception as e:
             logger.error(f"Fallback initialization failed: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
 
-# Start the initialization in a background thread
-init_thread = threading.Thread(target=init_chat_service)
-init_thread.daemon = True
-init_thread.start()
+# Initialize immediately instead of in a background thread
+init_chat_service()
 
 # Serve the frontend static files
 @app.route('/', defaults={'path': ''})

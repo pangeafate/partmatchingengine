@@ -5,12 +5,10 @@ services:
     env: python
     buildCommand: |
       cd backend && pip install -r requirements.txt
-      mkdir -p /data/source
-      mkdir -p /data/chroma_db
+    startCommand: |
+      mkdir -p /data/source /data/chroma_db
       cp -r ./Data/* /data/source/ || true
-      echo "Files copied to persistent storage"
-      cd /data/source && ls -la
-    startCommand: cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
+      cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
     envVars:
       - key: OPENAI_API_KEY
         sync: false

@@ -11,12 +11,7 @@ logger = logging.getLogger(__name__)
 
 class ChatService:
     def __init__(self, model: str = "gpt-4o", init_db: bool = True):
-        """Initialize the chat service.
-        
-        Args:
-            model: The OpenAI model to use
-            init_db: Whether to initialize the vector database
-        """
+        """Initialize the chat service."""
         self.model = model
         # Set OpenAI API key from environment variable
         openai.api_key = os.environ.get("OPENAI_API_KEY")
@@ -25,7 +20,12 @@ class ChatService:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         
         logger.info(f"Initializing vector store")
-        self.vector_store = VectorStore()
+        
+        # Check for Render environment
+        if os.path.exists("/data"):
+            self.vector_store = VectorStore(data_dir="/data/source", db_path="/data/chroma_db")
+        else:
+            self.vector_store = VectorStore()
         
         # Initialize the vector database if requested
         if init_db:
@@ -37,7 +37,6 @@ class ChatService:
                 logger.error(f"Error initializing vector database: {e}")
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
-                # Continue without raising - we'll try again when needed
     
     def format_context(self, documents: List[Document]) -> str:
         """Format retrieved documents into a context string for the LLM.
