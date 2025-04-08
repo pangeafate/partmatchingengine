@@ -150,9 +150,10 @@ def rebuild_db():
         # Start rebuild in a background thread
         def rebuild_task():
             global chat_service, vector_db_ready
-            vector_db_ready = False
+            
             try:
-                if chat_service and chat_service.vector_store:
+                vector_db_ready = False
+                if chat_service and hasattr(chat_service, 'vector_store'):
                     chat_service.vector_store.rebuild_vector_db()
                 else:
                     from vector_store import VectorStore
@@ -161,7 +162,7 @@ def rebuild_db():
                 vector_db_ready = True
             except Exception as e:
                 logger.error(f"Error rebuilding database: {e}")
-                if chat_service and chat_service.vector_store:
+                if chat_service and hasattr(chat_service, 'vector_store') and hasattr(chat_service.vector_store, 'build_progress'):
                     chat_service.vector_store.build_progress["status"] = "error"
                     chat_service.vector_store.build_progress["last_error"] = str(e)
         
@@ -171,6 +172,7 @@ def rebuild_db():
         
         return jsonify({"status": "started"})
     except Exception as e:
+        logger.error(f"Error starting rebuild: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/admin/db-status', methods=['GET'])
@@ -178,10 +180,21 @@ def db_status():
     """Get the database build status."""
     global chat_service
     
-    if chat_service and chat_service.vector_store:
+    if chat_service and hasattr(chat_service, 'vector_store') and hasattr(chat_service.vector_store, 'build_progress'):
         return jsonify(chat_service.vector_store.build_progress)
     else:
-        return jsonify({"status": "not_initialized"}), 404
+        # Return a default status if not initialized
+        return jsonify({
+            "total_files": 0,
+            "processed_files": 0,
+            "total_batches": 0,
+            "processed_batches": 0,
+            "total_items": 0,
+            "processed_items": 0,
+            "status": "not_initialized",
+            "last_error": None,
+            "last_update": None
+        })
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

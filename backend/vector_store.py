@@ -49,21 +49,6 @@ class SimpleOpenAIEmbeddings(Embeddings):
 
 class VectorStore:
     def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
-    # ... existing code ... 
-    # Add progress tracking
-        self.build_progress = {
-            "total_files": 0,
-            "processed_files": 0,
-            "total_batches": 0,
-            "processed_batches": 0,
-            "total_items": 0,
-            "processed_items": 0,
-            "status": "idle",
-            "last_error": None,
-            "last_update": None
-        }
-
-    def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
         """Initialize the vector store.
         
         Args:
@@ -112,6 +97,19 @@ class VectorStore:
         
         # Batch processing settings
         self.batch_size = 50  # Process 50 items at a time
+        
+        # Add progress tracking
+        self.build_progress = {
+            "total_files": 0,
+            "processed_files": 0,
+            "total_batches": 0,
+            "processed_batches": 0,
+            "total_items": 0,
+            "processed_items": 0,
+            "status": "idle",
+            "last_error": None,
+            "last_update": None
+        }
     
     def load_json_files(self) -> List[Dict[str, Any]]:
         """Load all JSON files from the data directory."""

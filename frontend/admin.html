@@ -152,6 +152,10 @@
                 rebuildNote.style.display = 'none';
                 errorContainer.style.display = 'block';
                 errorText.textContent = data.last_error || 'Unknown error';
+            } else if (data.status === 'not_initialized') {
+                rebuildBtn.disabled = false;
+                rebuildNote.style.display = 'none';
+                statusText.textContent = 'Status: Ready to build';
             } else {
                 rebuildBtn.disabled = false;
                 rebuildNote.style.display = 'none';
@@ -171,7 +175,8 @@
                         setTimeout(fetchStatus, 3000);  // Poll every 3 seconds
                     }
                 } else {
-                    statusText.textContent = 'Status: Unknown';
+                    console.error('Error response:', response.status);
+                    statusText.textContent = 'Status: Error fetching status';
                 }
             } catch (error) {
                 console.error('Error fetching status:', error);
@@ -184,15 +189,19 @@
             try {
                 rebuildBtn.disabled = true;
                 statusText.textContent = 'Status: Starting rebuild...';
+                errorContainer.style.display = 'none';
                 
                 const response = await fetch('/api/admin/rebuild-db', {
                     method: 'POST'
                 });
                 
                 if (response.ok) {
-                    fetchStatus();  // Start polling for updates
+                    setTimeout(fetchStatus, 2000);  // Start polling for updates after a brief delay
                 } else {
+                    const errorData = await response.json();
                     statusText.textContent = 'Status: Failed to start rebuild';
+                    errorContainer.style.display = 'block';
+                    errorText.textContent = errorData.message || 'Unknown error';
                     rebuildBtn.disabled = false;
                 }
             } catch (error) {
