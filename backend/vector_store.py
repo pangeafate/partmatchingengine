@@ -12,7 +12,7 @@ from langchain.embeddings.base import Embeddings
 class SimpleOpenAIEmbeddings(Embeddings):
     """A simple implementation of OpenAI embeddings that doesn't require tiktoken."""
     
-    def __init__(self, model="text-embedding-ada-002", dimensions=384):
+    def __init__(self, model="text-embedding-ada-002", dimensions=192):
         self.model = model
         self.dimensions = dimensions
     
@@ -96,7 +96,7 @@ class VectorStore:
         self.vector_db = None
         
         # Batch processing settings
-        self.batch_size = 50  # Process 50 items at a time
+        self.batch_size = 25  # Process 25 items at a time
         
         # Add progress tracking
         self.build_progress = {
@@ -463,7 +463,7 @@ class VectorStore:
             # Ensure embeddings are initialized
             if not hasattr(self, 'embeddings') or self.embeddings is None:
                 print("Embeddings not initialized, creating them now")
-                self.embeddings = SimpleOpenAIEmbeddings(dimensions=384)
+                self.embeddings = SimpleOpenAIEmbeddings(dimensions=192)
                 
             print(f"Loading vector database from {self.db_path}")
             try:
