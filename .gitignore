@@ -40,6 +40,8 @@ Thumbs.db
 # Environment variables
 .env
 
-# Database
+# Database (exclude local development database)
 chroma_db/
 *.sqlite3
+!/data/chroma_db/
+!/data/chroma_db/*.sqlite3
