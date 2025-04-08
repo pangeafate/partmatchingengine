@@ -48,7 +48,7 @@ class SimpleOpenAIEmbeddings(Embeddings):
         return embedding
 
 class VectorStore:
-    def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
+    def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 192):
         """Initialize the vector store.
         
         Args:
@@ -460,10 +460,22 @@ class VectorStore:
     def load_vector_db(self) -> Chroma:
         """Load the vector database from disk."""
         if os.path.exists(self.db_path):
+            # Check for pre-built database file
+            chroma_db_file = os.path.join(self.db_path, "chroma.sqlite3")
+            
             # Ensure embeddings are initialized
             if not hasattr(self, 'embeddings') or self.embeddings is None:
                 print("Embeddings not initialized, creating them now")
                 self.embeddings = SimpleOpenAIEmbeddings(dimensions=192)
+            
+            # Log database detection for debugging    
+            if os.path.exists(chroma_db_file):
+                print(f"Pre-built database file found at {chroma_db_file}")
+                file_size = os.path.getsize(chroma_db_file) / (1024 * 1024)  # Size in MB
+                print(f"Database file size: {file_size:.2f} MB")
+            else:
+                print(f"No pre-built database file found at {chroma_db_file}")
+                print(f"Contents of {self.db_path}: {os.listdir(self.db_path) if os.path.exists(self.db_path) else 'directory not found'}")
                 
             print(f"Loading vector database from {self.db_path}")
             try:
@@ -478,6 +490,8 @@ class VectorStore:
                 return self.vector_db
             except Exception as e:
                 print(f"Error loading vector database: {e}")
+                import traceback
+                print(traceback.format_exc())
                 raise
         else:
             print(f"Vector database not found at {self.db_path}")
@@ -488,6 +502,7 @@ class VectorStore:
         try:
             return self.load_vector_db()
         except FileNotFoundError:
+            print("Database not found, creating new vector database")
             vector_db = self.create_vector_db()
             self.save_vector_db()
             return vector_db
@@ -512,6 +527,13 @@ class VectorStore:
         if not self.vector_db:
             self.get_or_create_vector_db()
         
+        # Adjust k if it's larger than the number of documents in the database
+        if hasattr(self.vector_db, '_collection'):
+            total_docs = self.vector_db._collection.count()
+            if k > total_docs:
+                print(f"Adjusting k from {k} to {total_docs} (total documents in database)")
+                k = max(1, total_docs)
+        
         return self.vector_db.similarity_search(query, k=k)
     
     def rebuild_vector_db(self) -> None:
@@ -528,3 +550,12 @@ class VectorStore:
         vector_db = self.create_vector_db()
         self.save_vector_db()
         print("Vector database rebuilt successfully")
+    
+    def is_db_prebuilt(self) -> bool:
+        """Check if a pre-built database exists at the db_path."""
+        if not os.path.exists(self.db_path):
+            return False
+            
+        # Check for the SQLite database file
+        chroma_db_file = os.path.join(self.db_path, "chroma.sqlite3")
+        return os.path.exists(chroma_db_file)

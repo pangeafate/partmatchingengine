@@ -8,6 +8,9 @@ services:
     startCommand: |
       mkdir -p /data/source /data/chroma_db
       cp -r ./Data/* /data/source/ || true
+      # Copy pre-built database to persistent storage
+      mkdir -p /data/chroma_db
+      cp -r ./exportable_db/* /data/chroma_db/ || true
       cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
     envVars:
       - key: OPENAI_API_KEY
@@ -18,17 +21,4 @@ services:
     disk:
       name: data-disk
       mountPath: /data
-      sizeGB: 1
-    
-  # Frontend Static Site
-  - type: web
-    name: part-matching-engine-frontend
-    env: static
-    buildCommand: echo "Static site, no build needed"
-    staticPublishPath: ./frontend
-    envVars:
-      - key: API_URL
-        fromService:
-          name: part-matching-engine-api
-          type: web
-          property: url
+      sizeGB: 5

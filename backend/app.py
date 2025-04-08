@@ -58,6 +58,21 @@ def init_chat_service():
         api_key_exists = bool(os.environ.get("OPENAI_API_KEY"))
         logger.info(f"OpenAI API key exists: {api_key_exists}")
         
+        # Check database paths
+        db_path = "/data/chroma_db" if os.path.exists("/data") else "chroma_db"
+        logger.info(f"Database path: {db_path}")
+        logger.info(f"Database path exists: {os.path.exists(db_path)}")
+        
+        # Check specifically for pre-built database file
+        prebuilt_db_file = os.path.join(db_path, "chroma.sqlite3")
+        if os.path.exists(prebuilt_db_file):
+            db_size = os.path.getsize(prebuilt_db_file) / (1024 * 1024)  # Size in MB
+            logger.info(f"Pre-built database found at {prebuilt_db_file} (Size: {db_size:.2f} MB)")
+        else:
+            logger.warning(f"Pre-built database file not found at {prebuilt_db_file}")
+            if os.path.exists(db_path):
+                logger.info(f"Contents of {db_path}: {os.listdir(db_path)}")
+        
         # Check for Data directory
         data_path = "/data/source" if os.path.exists("/data") else "../Data" if os.path.basename(os.getcwd()) == "backend" else "./Data"
         logger.info(f"Data directory path: {data_path}")
@@ -71,10 +86,31 @@ def init_chat_service():
         except Exception as e:
             logger.error(f"Error listing data directory: {e}")
         
-        # Initialize chat service
-        chat_service = ChatService()
-        vector_db_ready = True
-        logger.info("Chat service initialized successfully")
+        # Initialize chat service - set init_db=False to avoid rebuilding the database
+        chat_service = ChatService(init_db=False)
+        
+        # Verify vector store is properly initialized
+        if hasattr(chat_service, 'vector_store'):
+            # Explicitly load the database instead of rebuilding it
+            logger.info("Loading pre-built vector database...")
+            chat_service.vector_store.load_vector_db()
+            if chat_service.vector_store.vector_db is not None:
+                doc_count = 0
+                if hasattr(chat_service.vector_store.vector_db, '_collection'):
+                    doc_count = chat_service.vector_store.vector_db._collection.count()
+                logger.info(f"Vector database loaded successfully with {doc_count} documents")
+                vector_db_ready = True
+            else:
+                logger.warning("Vector database loaded but appears to be empty")
+                vector_db_ready = False
+        else:
+            logger.error("Chat service initialized but vector_store not found")
+            vector_db_ready = False
+        
+        if vector_db_ready:
+            logger.info("Chat service initialized successfully")
+        else:
+            logger.warning("Chat service initialized but vector database not ready")
     except Exception as e:
         logger.error(f"Error initializing chat service: {e}")
         
@@ -83,28 +119,34 @@ def init_chat_service():
             from vector_store import VectorStore
             logger.info("Trying fallback initialization...")
             
-            # Create vector store without initializing the database
-            vector_store = VectorStore()
+            # Create vector store with explicit instructions to use pre-built database
+            vector_store = VectorStore(embedding_dimensions=192)
             
             # Initialize the chat service with the vector store
             chat_service = ChatService(init_db=False)
             chat_service.vector_store = vector_store
             
-            # Try to initialize the vector database now
-            logger.info("Initializing vector database in fallback...")
-            chat_service.vector_store.get_or_create_vector_db()
+            # Try to load the vector database explicitly
+            logger.info("Loading vector database in fallback...")
+            if os.path.exists(vector_store.db_path):
+                chat_service.vector_store.load_vector_db()
+                vector_db_ready = True
+                logger.info("Vector database loaded in fallback approach")
+            else:
+                # If no database exists, try creating it
+                logger.info("No database found, initializing a new one...")
+                chat_service.vector_store.get_or_create_vector_db()
+                vector_db_ready = True
+                logger.info("New vector database created in fallback approach")
             
-            vector_db_ready = True
-            logger.info("Chat service initialized with fallback approach")
         except Exception as e:
             logger.error(f"Fallback initialization failed: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
 
-# Start the initialization in a background thread
-init_thread = threading.Thread(target=init_chat_service)
-init_thread.daemon = True
-init_thread.start()
+# Start the initialization immediately instead of in a background thread
+# This ensures the database is ready before accepting requests
+init_chat_service()
 
 # Serve the frontend static files
 @app.route('/', defaults={'path': ''})
@@ -157,7 +199,7 @@ def rebuild_db():
                     chat_service.vector_store.rebuild_vector_db()
                 else:
                     from vector_store import VectorStore
-                    store = VectorStore()
+                    store = VectorStore(embedding_dimensions=192)  # Ensure consistent dimensions
                     store.rebuild_vector_db()
                 vector_db_ready = True
             except Exception as e:
@@ -231,12 +273,23 @@ def health_check():
     # Add more detailed information if chat service is initialized
     if chat_service is not None and hasattr(chat_service, "vector_store"):
         try:
+            # Check for pre-built database file
+            db_file = os.path.join(chat_service.vector_store.db_path, "chroma.sqlite3")
+            db_file_exists = os.path.exists(db_file)
+            
             status["vector_store_info"] = {
                 "data_dir": chat_service.vector_store.data_dir,
                 "db_path": chat_service.vector_store.db_path,
                 "data_dir_exists": os.path.exists(chat_service.vector_store.data_dir),
-                "db_path_exists": os.path.exists(chat_service.vector_store.db_path)
+                "db_path_exists": os.path.exists(chat_service.vector_store.db_path),
+                "db_file_exists": db_file_exists
             }
+            
+            # Add number of documents if vector_db is loaded
+            if hasattr(chat_service.vector_store, 'vector_db') and chat_service.vector_store.vector_db is not None:
+                if hasattr(chat_service.vector_store.vector_db, '_collection'):
+                    doc_count = chat_service.vector_store.vector_db._collection.count()
+                    status["vector_store_info"]["document_count"] = doc_count
         except Exception as e:
             status["vector_store_error"] = str(e)
     
@@ -246,6 +299,9 @@ def health_check():
 def chat():
     """Chat endpoint that handles user queries."""
     global chat_service, vector_db_ready
+    
+    # Debug output
+    logger.debug(f"Chat endpoint called, vector_db_ready: {vector_db_ready}, chat_service initialized: {chat_service is not None}")
     
     data = request.json
     
@@ -293,7 +349,11 @@ def chat():
         # Check if vector store is initialized
         if not hasattr(chat_service.vector_store, 'vector_db') or chat_service.vector_store.vector_db is None:
             logger.info("Vector database not initialized, initializing now...")
-            chat_service.vector_store.get_or_create_vector_db()
+            # Try to load first instead of recreating
+            try:
+                chat_service.vector_store.load_vector_db()
+            except:
+                chat_service.vector_store.get_or_create_vector_db()
             logger.info("Vector database initialized")
         
         response = chat_service.generate_response(query, chat_histories[session_id])
