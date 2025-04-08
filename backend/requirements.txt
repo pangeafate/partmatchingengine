@@ -1,7 +1,7 @@
 flask==3.0.2
 flask-cors==4.0.0
 python-dotenv==1.0.1
-openai==0.28.0
+openai>=1.10.0,<2.0.0
 chromadb==0.4.22
 langchain==0.1.9
 langchain-openai==0.0.5
