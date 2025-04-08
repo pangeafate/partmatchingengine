@@ -89,6 +89,10 @@ class VectorStore:
         
         # Ensure the db_path directory exists
         os.makedirs(self.db_path, exist_ok=True)
+        
+        # Initialize embeddings - THIS WAS MISSING
+        self.embeddings = SimpleOpenAIEmbeddings(dimensions=embedding_dimensions)
+        self.vector_db = None
     
     def load_json_files(self) -> List[Dict[str, Any]]:
         """Load all JSON files from the data directory."""
@@ -346,12 +350,27 @@ class VectorStore:
     def load_vector_db(self) -> Chroma:
         """Load the vector database from disk."""
         if os.path.exists(self.db_path):
-            self.vector_db = Chroma(
-                persist_directory=self.db_path,
-                embedding_function=self.embeddings
-            )
-            return self.vector_db
+            # Ensure embeddings are initialized
+            if not hasattr(self, 'embeddings') or self.embeddings is None:
+                print("Embeddings not initialized, creating them now")
+                self.embeddings = SimpleOpenAIEmbeddings(dimensions=384)
+                
+            print(f"Loading vector database from {self.db_path}")
+            try:
+                self.vector_db = Chroma(
+                    persist_directory=self.db_path,
+                    embedding_function=self.embeddings
+                )
+                # Print number of documents in the database for debugging
+                if hasattr(self.vector_db, '_collection'):
+                    count = self.vector_db._collection.count()
+                    print(f"Vector database loaded with {count} documents")
+                return self.vector_db
+            except Exception as e:
+                print(f"Error loading vector database: {e}")
+                raise
         else:
+            print(f"Vector database not found at {self.db_path}")
             raise FileNotFoundError(f"Vector database not found at {self.db_path}")
     
     def get_or_create_vector_db(self) -> Chroma:
@@ -359,6 +378,13 @@ class VectorStore:
         try:
             return self.load_vector_db()
         except FileNotFoundError:
+            vector_db = self.create_vector_db()
+            self.save_vector_db()
+            return vector_db
+        except Exception as e:
+            print(f"Error in get_or_create_vector_db: {e}")
+            # Try to create a new database as fallback
+            print("Attempting to create new vector database due to loading error")
             vector_db = self.create_vector_db()
             self.save_vector_db()
             return vector_db
@@ -391,3 +417,4 @@ class VectorStore:
         # Create a new vector database
         vector_db = self.create_vector_db()
         self.save_vector_db()
+        print("Vector database rebuilt successfully")
