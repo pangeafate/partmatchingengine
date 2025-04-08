@@ -49,6 +49,21 @@ class SimpleOpenAIEmbeddings(Embeddings):
 
 class VectorStore:
     def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
+    # ... existing code ... 
+    # Add progress tracking
+        self.build_progress = {
+            "total_files": 0,
+            "processed_files": 0,
+            "total_batches": 0,
+            "processed_batches": 0,
+            "total_items": 0,
+            "processed_items": 0,
+            "status": "idle",
+            "last_error": None,
+            "last_update": None
+        }
+
+    def __init__(self, data_dir: str = None, db_path: str = None, embedding_dimensions: int = 384):
         """Initialize the vector store.
         
         Args:
@@ -96,7 +111,7 @@ class VectorStore:
         self.vector_db = None
         
         # Batch processing settings
-        self.batch_size = 100  # Process 100 items at a time
+        self.batch_size = 50  # Process 50 items at a time
     
     def load_json_files(self) -> List[Dict[str, Any]]:
         """Load all JSON files from the data directory."""
@@ -314,6 +329,8 @@ class VectorStore:
     
     def create_vector_db(self) -> Chroma:
         """Create a Chroma vector database from JSON files."""
+        import time  # Add this import at the top if not already there
+        
         # Check if any JSON files exist in the data directory
         json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
         json_files = [f for f in json_files if os.path.basename(f) != "test_data.json"]
@@ -329,7 +346,34 @@ class VectorStore:
             except Exception as e:
                 print(f"Error listing files: {e}")
             
+            self.build_progress["status"] = "error"
+            self.build_progress["last_error"] = "No valid JSON files found"
             raise ValueError("No valid JSON files found in the data directory")
+        
+        # Initialize progress tracking
+        self.build_progress["status"] = "processing"
+        self.build_progress["total_files"] = len(json_files)
+        self.build_progress["processed_files"] = 0
+        self.build_progress["total_batches"] = 0
+        self.build_progress["processed_batches"] = 0
+        self.build_progress["total_items"] = 0
+        self.build_progress["processed_items"] = 0
+        self.build_progress["last_update"] = time.time()
+        
+        # Calculate total items and batches
+        total_items = 0
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                    if not isinstance(data, list):
+                        data = [data]
+                    total_items += len(data)
+                    self.build_progress["total_batches"] += (len(data) + self.batch_size - 1) // self.batch_size
+            except Exception as e:
+                print(f"Error counting items in {json_file}: {e}")
+        
+        self.build_progress["total_items"] = total_items
         
         # Process data in batches
         vector_db = None
@@ -377,15 +421,32 @@ class VectorStore:
                         batch_data = None
                         gc.collect()
                         
+                        # Update progress
+                        self.build_progress["processed_batches"] += 1
+                        self.build_progress["processed_items"] += len(batch_data)
+                        self.build_progress["last_update"] = time.time()
+                        
                         print(f"Completed batch {batch_num}/{total_batches}")
+                
+                # Update file progress
+                self.build_progress["processed_files"] += 1
                 
             except Exception as e:
                 print(f"Error processing file {json_file}: {e}")
                 import traceback
-                print(traceback.format_exc())
+                error_trace = traceback.format_exc()
+                print(error_trace)
+                self.build_progress["status"] = "error"
+                self.build_progress["last_error"] = f"Error processing file {os.path.basename(json_file)}: {str(e)}"
         
         if vector_db is None:
+            self.build_progress["status"] = "error"
+            self.build_progress["last_error"] = "Failed to create vector database"
             raise ValueError("Failed to create vector database")
+        
+        # Update final status
+        self.build_progress["status"] = "complete"
+        self.build_progress["last_update"] = time.time()
         
         self.vector_db = vector_db
         return vector_db

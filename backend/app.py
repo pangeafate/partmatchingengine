@@ -45,7 +45,7 @@ chat_histories = {}
 chat_service = None
 vector_db_ready = False
 
-# Initialize chat service immediately instead of in background
+# Initialize chat service in a background thread
 def init_chat_service():
     global chat_service, vector_db_ready
     try:
@@ -58,11 +58,23 @@ def init_chat_service():
         api_key_exists = bool(os.environ.get("OPENAI_API_KEY"))
         logger.info(f"OpenAI API key exists: {api_key_exists}")
         
+        # Check for Data directory
+        data_path = "/data/source" if os.path.exists("/data") else "../Data" if os.path.basename(os.getcwd()) == "backend" else "./Data"
+        logger.info(f"Data directory path: {data_path}")
+        logger.info(f"Data directory exists: {os.path.exists(data_path)}")
+        
+        # Check for files in Data directory
+        try:
+            if os.path.exists(data_path):
+                files = os.listdir(data_path)
+                logger.info(f"Files in data directory: {files}")
+        except Exception as e:
+            logger.error(f"Error listing data directory: {e}")
+        
         # Initialize chat service
         chat_service = ChatService()
         vector_db_ready = True
         logger.info("Chat service initialized successfully")
-        return True
     except Exception as e:
         logger.error(f"Error initializing chat service: {e}")
         
@@ -71,8 +83,8 @@ def init_chat_service():
             from vector_store import VectorStore
             logger.info("Trying fallback initialization...")
             
-            # Create vector store with explicit paths
-            vector_store = VectorStore(data_dir="/data/source", db_path="/data/chroma_db")
+            # Create vector store without initializing the database
+            vector_store = VectorStore()
             
             # Initialize the chat service with the vector store
             chat_service = ChatService(init_db=False)
@@ -84,15 +96,15 @@ def init_chat_service():
             
             vector_db_ready = True
             logger.info("Chat service initialized with fallback approach")
-            return True
         except Exception as e:
             logger.error(f"Fallback initialization failed: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return False
 
-# Initialize immediately instead of in a background thread
-init_chat_service()
+# Start the initialization in a background thread
+init_thread = threading.Thread(target=init_chat_service)
+init_thread.daemon = True
+init_thread.start()
 
 # Serve the frontend static files
 @app.route('/', defaults={'path': ''})
@@ -123,6 +135,53 @@ def api_info():
             "reset_chat": "/api/reset"
         }
     })
+
+@app.route('/admin')
+def admin_page():
+    """Admin page for database management."""
+    return send_from_directory(app.static_folder, 'admin.html')
+
+@app.route('/api/admin/rebuild-db', methods=['POST'])
+def rebuild_db():
+    """Start rebuilding the vector database."""
+    global chat_service, vector_db_ready
+    
+    try:
+        # Start rebuild in a background thread
+        def rebuild_task():
+            global chat_service, vector_db_ready
+            vector_db_ready = False
+            try:
+                if chat_service and chat_service.vector_store:
+                    chat_service.vector_store.rebuild_vector_db()
+                else:
+                    from vector_store import VectorStore
+                    store = VectorStore()
+                    store.rebuild_vector_db()
+                vector_db_ready = True
+            except Exception as e:
+                logger.error(f"Error rebuilding database: {e}")
+                if chat_service and chat_service.vector_store:
+                    chat_service.vector_store.build_progress["status"] = "error"
+                    chat_service.vector_store.build_progress["last_error"] = str(e)
+        
+        thread = threading.Thread(target=rebuild_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({"status": "started"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/admin/db-status', methods=['GET'])
+def db_status():
+    """Get the database build status."""
+    global chat_service
+    
+    if chat_service and chat_service.vector_store:
+        return jsonify(chat_service.vector_store.build_progress)
+    else:
+        return jsonify({"status": "not_initialized"}), 404
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
