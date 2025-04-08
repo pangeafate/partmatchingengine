@@ -5,8 +5,9 @@ const chatMessages = document.getElementById('chat-messages');
 const resetButton = document.getElementById('reset-chat');
 
 // API Configuration
-// Use relative URLs to work in both development and production
-const API_URL = '/api';
+const API_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:3001/api' 
+    : '/api';
 let sessionId = null;
 
 // Helper Functions
@@ -84,7 +85,7 @@ async function sendMessage(message) {
             },
             body: JSON.stringify({
                 query: message,
-                session_id: sessionId
+                session_id: sessionId || 'default'
             })
         });
         

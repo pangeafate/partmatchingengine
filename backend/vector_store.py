@@ -146,154 +146,92 @@ class VectorStore:
     def prepare_documents(self, data: List[Dict[str, Any]]) -> List[Document]:
         """Convert JSON data to Document objects for the vector store.
         
-        This method implements a hierarchical chunking strategy for PDF documents:
-        1. Page-Level Chunks: Base chunk for each page with metadata
-        2. Section-Level Chunks: Group elements within the same section
-        3. Element-Level Chunks: Preserve important individual elements
-        
-        It also integrates rich metadata with each chunk for better retrieval.
+        This method implements a comprehensive JSON parsing strategy that handles:
+        1. Nested objects and arrays
+        2. Relationships between entities
+        3. Metadata preservation
+        4. Hierarchical structure
         """
         documents = []
         
-        # Group items by filename first
-        files = {}
+        def sanitize_metadata(value: Any) -> Any:
+            """Convert complex metadata types to simple types that ChromaDB can handle."""
+            if isinstance(value, (str, int, float, bool)):
+                return value
+            elif isinstance(value, (list, tuple)):
+                return ', '.join(str(x) for x in value)
+            elif isinstance(value, dict):
+                return str(value)
+            else:
+                return str(value)
+        
+        def process_value(value, path: str = "", metadata: Dict = None) -> None:
+            """Recursively process JSON values to create documents."""
+            if metadata is None:
+                metadata = {}
+            
+            # Sanitize metadata
+            sanitized_metadata = {k: sanitize_metadata(v) for k, v in metadata.items()}
+            
+            if isinstance(value, dict):
+                # Process dictionary
+                content = []
+                for key, val in value.items():
+                    new_path = f"{path}.{key}" if path else key
+                    if isinstance(val, (dict, list)):
+                        process_value(val, new_path, sanitized_metadata)
+                    else:
+                        content.append(f"{key}: {val}")
+                
+                if content:
+                    doc_metadata = sanitized_metadata.copy()
+                    doc_metadata["path"] = path
+                    doc_metadata["type"] = "object"
+                    doc = Document(
+                        page_content="\n".join(content),
+                        metadata=doc_metadata
+                    )
+                    documents.append(doc)
+                
+            elif isinstance(value, list):
+                # Process list
+                for i, item in enumerate(value):
+                    new_path = f"{path}[{i}]" if path else f"[{i}]"
+                    if isinstance(item, (dict, list)):
+                        process_value(item, new_path, sanitized_metadata)
+                    else:
+                        doc_metadata = sanitized_metadata.copy()
+                        doc_metadata["path"] = path
+                        doc_metadata["type"] = "list_item"
+                        doc_metadata["index"] = i
+                        doc = Document(
+                            page_content=f"Item {i}: {item}",
+                            metadata=doc_metadata
+                        )
+                        documents.append(doc)
+            
+            else:
+                # Process primitive value
+                doc_metadata = sanitized_metadata.copy()
+                doc_metadata["path"] = path
+                doc_metadata["type"] = "primitive"
+                doc = Document(
+                    page_content=f"{path}: {value}",
+                    metadata=doc_metadata
+                )
+                documents.append(doc)
+        
+        # Process each item in the data
         for item in data:
-            if "metadata" in item and "filename" in item["metadata"]:
-                filename = item["metadata"]["filename"]
-                if filename not in files:
-                    files[filename] = []
-                files[filename].append(item)
-        
-        # Process each file
-        for filename, file_items in files.items():
-            # Group items by page number
-            pages = {}
-            for item in file_items:
-                if "metadata" in item and "page_number" in item["metadata"]:
-                    page_num = item["metadata"]["page_number"]
-                    if page_num not in pages:
-                        pages[page_num] = []
-                    pages[page_num].append(item)
+            # Extract metadata if present
+            metadata = {}
+            if "metadata" in item:
+                metadata = item["metadata"]
+                del item["metadata"]
             
-            # Process each page
-            for page_num, page_items in pages.items():
-                # Sort items by their hierarchical structure
-                page_items.sort(key=lambda x: x["metadata"].get("category_depth", 0) if "metadata" in x else 0)
-                
-                # Create a document for the entire page
-                page_content = f"Page {page_num}:\n\n"
-                
-                # Extract all titles on the page for context
-                titles = [item for item in page_items if item.get("type") in ["Title"]]
-                title_text = ""
-                for title in titles:
-                    if "text" in title and title["text"]:
-                        title_text += f"{title['text']} "
-                
-                # Group items by their parent_id to maintain hierarchical relationships
-                parent_groups = {}
-                for item in page_items:
-                    if "metadata" in item and "parent_id" in item["metadata"]:
-                        parent_id = item["metadata"]["parent_id"]
-                        if parent_id not in parent_groups:
-                            parent_groups[parent_id] = []
-                        parent_groups[parent_id].append(item)
-                
-                # Process each parent group (section) separately
-                for parent_id, section_items in parent_groups.items():
-                    section_content = ""
-                    
-                    # Add titles first
-                    section_titles = [item for item in section_items if item.get("type") in ["Title", "Heading"]]
-                    for title in section_titles:
-                        if "text" in title and title["text"]:
-                            section_content += f"{title['text']}\n"
-                    
-                    # Add narrative text
-                    narratives = [item for item in section_items if item.get("type") == "NarrativeText"]
-                    for narrative in narratives:
-                        if "text" in narrative and narrative["text"]:
-                            section_content += f"{narrative['text']}\n"
-                    
-                    # Add other text content
-                    other_text = [item for item in section_items if 
-                                 item.get("type") not in ["Title", "Heading", "NarrativeText"] and 
-                                 "text" in item and item["text"]]
-                    for text_item in other_text:
-                        section_content += f"{text_item['text']}\n"
-                    
-                    if section_content:
-                        # Add to the overall page content
-                        page_content += section_content + "\n"
-                        
-                        # Create a section-level chunk with rich metadata
-                        section_metadata = {
-                            "page_number": page_num,
-                            "filename": filename,
-                            "source": "pdf_json_data",
-                            "chunk_type": "section",
-                            "parent_id": parent_id,
-                            "title_context": title_text.strip()
-                        }
-                        
-                        # Create a Document object for the section
-                        section_doc = Document(page_content=section_content, metadata=section_metadata)
-                        documents.append(section_doc)
-                
-                # Handle items without parent_id (top-level items)
-                top_level_items = [item for item in page_items if 
-                                  "metadata" not in item or 
-                                  "parent_id" not in item["metadata"]]
-                
-                top_level_content = ""
-                for item in top_level_items:
-                    if "text" in item and item["text"]:
-                        top_level_content += f"{item['text']}\n"
-                
-                if top_level_content:
-                    page_content += top_level_content
-                
-                # Create metadata with key information for retrieval
-                page_metadata = {
-                    "page_number": page_num,
-                    "filename": filename,
-                    "source": "pdf_json_data",
-                    "chunk_type": "page",
-                    "title_context": title_text.strip()
-                }
-                
-                # Create a Document object for the entire page
-                page_doc = Document(page_content=page_content, metadata=page_metadata)
-                documents.append(page_doc)
-                
-                # For larger pages, create additional overlapping chunks
-                if len(page_content) > 800:
-                    chunks = self._chunk_text(page_content, chunk_size=800, overlap=200)
-                    for i, chunk in enumerate(chunks):
-                        chunk_metadata = page_metadata.copy()
-                        chunk_metadata["chunk_index"] = i
-                        chunk_metadata["chunk_type"] = "page_chunk"
-                        chunk_doc = Document(page_content=chunk, metadata=chunk_metadata)
-                        documents.append(chunk_doc)
+            # Process the item
+            process_value(item, metadata=metadata)
         
-        # Process regular JSON data (not from PDFs)
-        regular_items = [item for item in data if "metadata" not in item or "filename" not in item["metadata"]]
-        for item in regular_items:
-            # Convert the item to a string representation for the content
-            content = json.dumps(item, indent=2)
-            
-            # Create metadata with key information for retrieval
-            metadata = {
-                "id": item.get("id", ""),
-                "name": item.get("name", ""),
-                "source": "json_data"
-            }
-            
-            # Create a Document object
-            doc = Document(page_content=content, metadata=metadata)
-            documents.append(doc)
-        
-        print(f"Created {len(documents)} document chunks")
         return documents
     
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
@@ -327,7 +265,7 @@ class VectorStore:
     
     def create_vector_db(self) -> Chroma:
         """Create a Chroma vector database from JSON files."""
-        import time  # Add this import at the top if not already there
+        import time
         
         # Check if any JSON files exist in the data directory
         json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
@@ -375,6 +313,7 @@ class VectorStore:
         
         # Process data in batches
         vector_db = None
+        processed_items = 0
         
         # Process each JSON file separately
         for json_file in json_files:
@@ -390,52 +329,58 @@ class VectorStore:
                     print(f"Processing {len(data)} items in {total_batches} batches")
                     
                     for batch_idx in range(0, len(data), self.batch_size):
-                        batch_num = batch_idx // self.batch_size + 1
-                        end_idx = min(batch_idx + self.batch_size, len(data))
-                        batch_data = data[batch_idx:end_idx]
-                        
-                        print(f"Processing batch {batch_num}/{total_batches} ({len(batch_data)} items)")
-                        
-                        # Prepare documents for this batch
-                        documents = self.prepare_documents(batch_data)
-                        
-                        if vector_db is None:
-                            # Create new database with first batch
-                            print("Creating new vector database")
-                            vector_db = Chroma.from_documents(
-                                documents=documents,
-                                embedding=self.embeddings,
-                                persist_directory=self.db_path
-                            )
-                            vector_db.persist()
-                        else:
-                            # Add documents to existing database
-                            print("Adding to existing vector database")
-                            vector_db.add_documents(documents)
-                            vector_db.persist()
-                        
-                        # Force garbage collection to free memory
-                        documents = None
-                        batch_data = None
-                        gc.collect()
-                        
-                        # Update progress
-                        self.build_progress["processed_batches"] += 1
-                        self.build_progress["processed_items"] += len(batch_data)
-                        self.build_progress["last_update"] = time.time()
-                        
-                        print(f"Completed batch {batch_num}/{total_batches}")
-                
-                # Update file progress
-                self.build_progress["processed_files"] += 1
+                        try:
+                            batch_num = batch_idx // self.batch_size + 1
+                            end_idx = min(batch_idx + self.batch_size, len(data))
+                            batch_data = data[batch_idx:end_idx]
+                            
+                            print(f"Processing batch {batch_num}/{total_batches} ({len(batch_data)} items)")
+                            
+                            # Prepare documents for this batch
+                            documents = self.prepare_documents(batch_data)
+                            
+                            if vector_db is None:
+                                # Create new database with first batch
+                                print("Creating new vector database")
+                                vector_db = Chroma.from_documents(
+                                    documents=documents,
+                                    embedding=self.embeddings,
+                                    persist_directory=self.db_path
+                                )
+                                vector_db.persist()
+                            else:
+                                # Add documents to existing database
+                                print("Adding to existing vector database")
+                                vector_db.add_documents(documents)
+                                vector_db.persist()
+                            
+                            # Force garbage collection to free memory
+                            documents = None
+                            batch_data = None
+                            gc.collect()
+                            
+                            # Update progress
+                            self.build_progress["processed_batches"] += 1
+                            processed_items += len(batch_data)
+                            self.build_progress["processed_items"] = processed_items
+                            self.build_progress["last_update"] = time.time()
+                            
+                            print(f"Completed batch {batch_num}/{total_batches}")
+                            
+                        except Exception as e:
+                            print(f"Error processing batch {batch_num}: {e}")
+                            import traceback
+                            print(traceback.format_exc())
+                            continue  # Continue with next batch
+                    
+                    # Update file progress
+                    self.build_progress["processed_files"] += 1
                 
             except Exception as e:
                 print(f"Error processing file {json_file}: {e}")
                 import traceback
-                error_trace = traceback.format_exc()
-                print(error_trace)
-                self.build_progress["status"] = "error"
-                self.build_progress["last_error"] = f"Error processing file {os.path.basename(json_file)}: {str(e)}"
+                print(traceback.format_exc())
+                continue  # Continue with next file
         
         if vector_db is None:
             self.build_progress["status"] = "error"

@@ -36,7 +36,13 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend')
-CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for all API routes
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["*"],  # Allow all origins in production
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # Store chat histories for different sessions
 chat_histories = {}
@@ -295,15 +301,22 @@ def health_check():
     
     return jsonify(status)
 
-@app.route('/api/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST', 'OPTIONS'])
 def chat():
     """Chat endpoint that handles user queries."""
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     global chat_service, vector_db_ready
     
     # Debug output
     logger.debug(f"Chat endpoint called, vector_db_ready: {vector_db_ready}, chat_service initialized: {chat_service is not None}")
     
-    data = request.json
+    try:
+        data = request.json
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {e}")
+        return jsonify({"error": "Invalid JSON in request body"}), 400
     
     if not data or 'query' not in data:
         return jsonify({"error": "Query is required"}), 400
@@ -312,7 +325,7 @@ def chat():
     if not vector_db_ready or chat_service is None:
         logger.warning("Chat service not ready yet")
         return jsonify({
-            "response": "The system is still initializing. Please try again in a moment.",
+            "error": "The system is still initializing. Please try again in a moment.",
             "status": "initializing"
         }), 503  # Service Unavailable
     
@@ -326,38 +339,7 @@ def chat():
     try:
         # Generate response
         logger.info(f"Generating response for query: {query}")
-        logger.info(f"Vector DB ready: {vector_db_ready}")
-        logger.info(f"Chat service initialized: {chat_service is not None}")
-        
-        # Log environment information
-        logger.info(f"Current working directory: {os.getcwd()}")
-        logger.info(f"Data directory path: {chat_service.vector_store.data_dir}")
-        logger.info(f"Data directory exists: {os.path.exists(chat_service.vector_store.data_dir)}")
-        logger.info(f"Database path: {chat_service.vector_store.db_path}")
-        logger.info(f"Database path exists: {os.path.exists(chat_service.vector_store.db_path)}")
-        
-        # Try to list files in the data directory
-        try:
-            data_files = os.listdir(chat_service.vector_store.data_dir)
-            logger.info(f"Files in data directory: {data_files}")
-        except Exception as e:
-            logger.error(f"Error listing data directory: {e}")
-        
-        # Check OpenAI API key
-        logger.info(f"OpenAI API key exists: {bool(os.environ.get('OPENAI_API_KEY'))}")
-        
-        # Check if vector store is initialized
-        if not hasattr(chat_service.vector_store, 'vector_db') or chat_service.vector_store.vector_db is None:
-            logger.info("Vector database not initialized, initializing now...")
-            # Try to load first instead of recreating
-            try:
-                chat_service.vector_store.load_vector_db()
-            except:
-                chat_service.vector_store.get_or_create_vector_db()
-            logger.info("Vector database initialized")
-        
         response = chat_service.generate_response(query, chat_histories[session_id])
-        logger.info(f"Response generated successfully: {response[:50]}...")
         
         # Update chat history
         chat_histories[session_id].append({"role": "user", "content": query})
@@ -365,27 +347,15 @@ def chat():
         
         return jsonify({
             "response": response,
-            "session_id": session_id,
-            "status": "success"
+            "session_id": session_id
         })
     except Exception as e:
-        import traceback
-        error_traceback = traceback.format_exc()
         logger.error(f"Error generating response: {e}")
-        logger.error(f"Traceback: {error_traceback}")
-        
-        # Try to provide more helpful error information
-        error_info = str(e)
-        if "No data found in the data directory" in error_info:
-            error_info = "No data files found. Please ensure the Data directory contains the required JSON files."
-        elif "OPENAI_API_KEY" in error_info:
-            error_info = "OpenAI API key is missing or invalid. Please check your environment variables."
-        
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({
-            "response": "Sorry, there was an error processing your request. Please try again later.",
-            "error": error_info,
-            "traceback": error_traceback,
-            "status": "error"
+            "error": f"Error generating response: {str(e)}",
+            "details": traceback.format_exc()
         }), 500
 
 @app.route('/api/reset', methods=['POST'])
@@ -400,7 +370,6 @@ def reset_chat():
     return jsonify({"status": "Chat history reset", "session_id": session_id})
 
 # Make sure app is listening on the port that Render expects
-# This port will be used when running locally directly with python app.py
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))  # Changed default to 10000 to match render.yaml
-    app.run(host='0.0.0.0', port=port, debug=True)
+    port = int(os.environ.get('PORT', 3001))
+    app.run(host='0.0.0.0', port=port)

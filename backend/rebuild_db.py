@@ -1,55 +1,30 @@
-import argparse
 import os
-import logging
+from dotenv import load_dotenv
 from vector_store import VectorStore
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 def main():
-    parser = argparse.ArgumentParser(description="Rebuild the vector database")
-    parser.add_argument('--data-dir', help='Directory containing JSON files')
-    parser.add_argument('--db-path', help='Path to save the vector database')
-    args = parser.parse_args()
+    # Load environment variables
+    load_dotenv()
     
-    # Check if we're running in Render environment
-    render_env = os.path.exists('/data')
+    # Initialize vector store
+    vector_store = VectorStore()
     
-    if render_env:
-        logger.info("Running in Render environment")
-    else:
-        logger.info("Running in local environment")
-    
-    # Initialize the vector store with appropriate paths
-    store = VectorStore(
-        data_dir=args.data_dir,
-        db_path=args.db_path
-    )
-    
-    # Log paths being used
-    logger.info(f"Using data directory: {store.data_dir}")
-    logger.info(f"Using database path: {store.db_path}")
-    
-    # Check if the data directory exists
-    if not os.path.exists(store.data_dir):
-        logger.error(f"Data directory does not exist: {store.data_dir}")
-        return
-    
-    # Check if any files exist in the data directory
     try:
-        files = os.listdir(store.data_dir)
-        logger.info(f"Files in data directory: {files}")
+        # Force rebuild of the vector database
+        print("Starting database rebuild...")
+        vector_store.rebuild_vector_db()
+        print("Database rebuild completed successfully")
+        
+        # Verify the database
+        db = vector_store.load_vector_db()
+        if hasattr(db, '_collection'):
+            count = db._collection.count()
+            print(f"Verified database contains {count} documents")
+        
     except Exception as e:
-        logger.error(f"Error listing data directory: {e}")
-    
-    logger.info("Rebuilding vector database...")
-    store.rebuild_vector_db()
-    
-    logger.info("Database rebuild complete!")
+        print(f"Error rebuilding database: {e}")
+        import traceback
+        print(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -15,7 +16,6 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -23,13 +23,6 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
-env/
-
-# Environment variables
-.env
-
-# Vector database
-backend/chroma_db/
 
 # IDE
 .idea/
@@ -39,12 +32,14 @@ backend/chroma_db/
 
 # OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
 # Logs
 *.log
+
+# Environment variables
+.env
+
+# Database
+chroma_db/
+*.sqlite3

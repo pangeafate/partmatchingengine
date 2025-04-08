@@ -10,7 +10,7 @@ from vector_store import VectorStore  # Use the original version
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    def __init__(self, model: str = "gpt-4o", init_db: bool = True):
+    def __init__(self, model: str = "gpt-4", init_db: bool = True):
         """Initialize the chat service."""
         self.model = model
         # Set OpenAI API key from environment variable

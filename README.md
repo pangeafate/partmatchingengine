@@ -1,6 +1,59 @@
 # Part Matching Engine
 
-A web service that allows users to ask questions about industrial parts and equipment information contained in JSON files. The service provides a chat-like interface for interacting with the data.
+A web application for matching industrial parts using AI-powered semantic search.
+
+## Local Development
+
+1. Clone the repository
+2. Create a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+4. Set up environment variables:
+   - Create a `.env` file in the backend directory
+   - Add your OpenAI API key:
+     ```
+     OPENAI_API_KEY=your_api_key_here
+     ```
+5. Start the backend server:
+   ```bash
+   python app.py
+   ```
+6. Start the frontend server:
+   ```bash
+   cd frontend
+   python -m http.server 8080
+   ```
+7. Access the application at http://localhost:8080
+
+## Deployment to Render
+
+1. Push your code to GitHub
+2. Create a new Web Service on Render
+3. Connect your GitHub repository
+4. Configure the service:
+   - Environment: Python
+   - Build Command: `cd backend && pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app --bind 0.0.0.0:$PORT`
+5. Add environment variables:
+   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `PORT`: 10000
+6. Deploy the service
+
+## Database Management
+
+The application uses ChromaDB for vector storage. The database is automatically created and populated when the application starts. You can rebuild the database through the admin interface at `/admin`.
+
+## Environment Variables
+
+- `OPENAI_API_KEY`: Required for OpenAI API access
+- `PORT`: Port number for the server (default: 3001)
 
 ## Features
 
@@ -22,40 +75,6 @@ A web service that allows users to ask questions about industrial parts and equi
   - `styles.css`: CSS styles
   - `app.js`: JavaScript for the chat interface
 - `Data/`: Directory for JSON data files
-
-## Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/pangeafate/partmatchingengine.git
-cd partmatchingengine
-```
-
-2. Install backend dependencies:
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-3. Set up environment variables:
-Create a `.env` file in the root directory with your OpenAI API key:
-```
-OPENAI_API_KEY=your_api_key_here
-```
-
-4. Run the backend server:
-```bash
-cd backend
-python app.py
-```
-
-5. Run the frontend server:
-```bash
-cd frontend
-python -m http.server 8080
-```
-
-6. Open your browser and navigate to `http://localhost:8080`
 
 ## Usage
 

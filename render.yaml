@@ -1,24 +1,21 @@
 services:
   # Backend API Service
   - type: web
-    name: part-matching-engine-api
+    name: part-matching-engine
     env: python
-    buildCommand: |
-      cd backend && pip install -r requirements.txt
-    startCommand: |
-      mkdir -p /data/source /data/chroma_db
-      cp -r ./Data/* /data/source/ || true
-      # Copy pre-built database to persistent storage
-      mkdir -p /data/chroma_db
-      cp -r ./exportable_db/* /data/chroma_db/ || true
-      cd backend && gunicorn app:app --bind 0.0.0.0:$PORT --log-level debug
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: OPENAI_API_KEY
         sync: false
       - key: PORT
         value: 10000
+    healthCheckPath: /api/health
+    autoDeploy: true
     # Ensure Data directory is mounted properly
     disk:
-      name: data-disk
+      name: data
       mountPath: /data
-      sizeGB: 5
+      sizeGB: 1
