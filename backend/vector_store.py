@@ -96,7 +96,7 @@ class VectorStore:
         self.vector_db = None
         
         # Batch processing settings
-        self.batch_size = 2  # Process 25 items at a time
+        self.batch_size = 25  # Process 25 items at a time
         
         # Add progress tracking
         self.build_progress = {
