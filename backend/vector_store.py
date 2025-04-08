@@ -1,6 +1,7 @@
 import os
 import json
 import glob
+import gc
 import openai
 from typing import List, Dict, Any
 
@@ -11,7 +12,7 @@ from langchain.embeddings.base import Embeddings
 class SimpleOpenAIEmbeddings(Embeddings):
     """A simple implementation of OpenAI embeddings that doesn't require tiktoken."""
     
-    def __init__(self, model="text-embedding-ada-002", dimensions=None):
+    def __init__(self, model="text-embedding-ada-002", dimensions=384):
         self.model = model
         self.dimensions = dimensions
     
@@ -90,9 +91,12 @@ class VectorStore:
         # Ensure the db_path directory exists
         os.makedirs(self.db_path, exist_ok=True)
         
-        # Initialize embeddings - THIS WAS MISSING
+        # Initialize embeddings
         self.embeddings = SimpleOpenAIEmbeddings(dimensions=embedding_dimensions)
         self.vector_db = None
+        
+        # Batch processing settings
+        self.batch_size = 100  # Process 100 items at a time
     
     def load_json_files(self) -> List[Dict[str, Any]]:
         """Load all JSON files from the data directory."""
@@ -105,6 +109,11 @@ class VectorStore:
         print(f"Found {len(json_files)} JSON files")
         
         for file_path in json_files:
+            # Skip test_data.json
+            if os.path.basename(file_path) == "test_data.json":
+                print(f"Skipping test file: {file_path}")
+                continue
+                
             print(f"Loading file: {file_path}")
             try:
                 with open(file_path, 'r') as f:
@@ -307,8 +316,10 @@ class VectorStore:
         """Create a Chroma vector database from JSON files."""
         # Check if any JSON files exist in the data directory
         json_files = glob.glob(os.path.join(self.data_dir, "*.json"))
+        json_files = [f for f in json_files if os.path.basename(f) != "test_data.json"]
+        
         if not json_files:
-            print(f"Error: No JSON files found in data directory: {self.data_dir}")
+            print(f"Error: No valid JSON files found in data directory: {self.data_dir}")
             print(f"Current working directory: {os.getcwd()}")
             print(f"Listing files in data directory:")
             try:
@@ -318,25 +329,65 @@ class VectorStore:
             except Exception as e:
                 print(f"Error listing files: {e}")
             
-            raise ValueError("No JSON files found in the data directory")
+            raise ValueError("No valid JSON files found in the data directory")
         
-        # Load data from JSON files
-        data = self.load_json_files()
+        # Process data in batches
+        vector_db = None
         
-        if not data:
-            raise ValueError("No data found in the data directory")
+        # Process each JSON file separately
+        for json_file in json_files:
+            print(f"Processing file: {json_file}")
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                    if not isinstance(data, list):
+                        data = [data]
+                    
+                    # Process in batches
+                    total_batches = (len(data) + self.batch_size - 1) // self.batch_size
+                    print(f"Processing {len(data)} items in {total_batches} batches")
+                    
+                    for batch_idx in range(0, len(data), self.batch_size):
+                        batch_num = batch_idx // self.batch_size + 1
+                        end_idx = min(batch_idx + self.batch_size, len(data))
+                        batch_data = data[batch_idx:end_idx]
+                        
+                        print(f"Processing batch {batch_num}/{total_batches} ({len(batch_data)} items)")
+                        
+                        # Prepare documents for this batch
+                        documents = self.prepare_documents(batch_data)
+                        
+                        if vector_db is None:
+                            # Create new database with first batch
+                            print("Creating new vector database")
+                            vector_db = Chroma.from_documents(
+                                documents=documents,
+                                embedding=self.embeddings,
+                                persist_directory=self.db_path
+                            )
+                            vector_db.persist()
+                        else:
+                            # Add documents to existing database
+                            print("Adding to existing vector database")
+                            vector_db.add_documents(documents)
+                            vector_db.persist()
+                        
+                        # Force garbage collection to free memory
+                        documents = None
+                        batch_data = None
+                        gc.collect()
+                        
+                        print(f"Completed batch {batch_num}/{total_batches}")
+                
+            except Exception as e:
+                print(f"Error processing file {json_file}: {e}")
+                import traceback
+                print(traceback.format_exc())
         
-        # Prepare documents
-        documents = self.prepare_documents(data)
+        if vector_db is None:
+            raise ValueError("Failed to create vector database")
         
-        # Create vector store
-        vector_db = Chroma.from_documents(
-            documents=documents, 
-            embedding=self.embeddings,
-            persist_directory=self.db_path
-        )
         self.vector_db = vector_db
-        
         return vector_db
     
     def save_vector_db(self) -> None:
