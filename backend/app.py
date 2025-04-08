@@ -40,7 +40,8 @@ CORS(app, resources={
     r"/api/*": {
         "origins": ["*"],  # Allow all origins in production
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
     }
 })
 
