@@ -68,38 +68,26 @@ def init_chat_service():
         # Check database paths
         db_path = "/data/chroma_db" if os.path.exists("/data") else "chroma_db"
         logger.info(f"Database path: {db_path}")
-        logger.info(f"Database path exists: {os.path.exists(db_path)}")
         
-        # Check specifically for pre-built database file
-        prebuilt_db_file = os.path.join(db_path, "chroma.sqlite3")
-        if os.path.exists(prebuilt_db_file):
-            db_size = os.path.getsize(prebuilt_db_file) / (1024 * 1024)  # Size in MB
-            logger.info(f"Pre-built database found at {prebuilt_db_file} (Size: {db_size:.2f} MB)")
-        else:
-            logger.warning(f"Pre-built database file not found at {prebuilt_db_file}")
-            if os.path.exists(db_path):
-                logger.info(f"Contents of {db_path}: {os.listdir(db_path)}")
+        # Ensure database directory exists
+        os.makedirs(db_path, exist_ok=True)
+        logger.info(f"Database path exists: {os.path.exists(db_path)}")
         
         # Check for Data directory
         data_path = "/data/source" if os.path.exists("/data") else "../Data" if os.path.basename(os.getcwd()) == "backend" else "./Data"
         logger.info(f"Data directory path: {data_path}")
+        
+        # Ensure data directory exists
+        os.makedirs(data_path, exist_ok=True)
         logger.info(f"Data directory exists: {os.path.exists(data_path)}")
         
-        # Check for files in Data directory
-        try:
-            if os.path.exists(data_path):
-                files = os.listdir(data_path)
-                logger.info(f"Files in data directory: {files}")
-        except Exception as e:
-            logger.error(f"Error listing data directory: {e}")
-        
-        # Initialize chat service - set init_db=False to avoid rebuilding the database
-        chat_service = ChatService(init_db=False)
+        # Initialize chat service with init_db=True to ensure database is created
+        chat_service = ChatService(init_db=True)
         
         # Verify vector store is properly initialized
         if hasattr(chat_service, 'vector_store'):
-            # Explicitly load the database instead of rebuilding it
-            logger.info("Loading pre-built vector database...")
+            # Explicitly load the database
+            logger.info("Loading vector database...")
             chat_service.vector_store.load_vector_db()
             if chat_service.vector_store.vector_db is not None:
                 doc_count = 0
@@ -120,36 +108,8 @@ def init_chat_service():
             logger.warning("Chat service initialized but vector database not ready")
     except Exception as e:
         logger.error(f"Error initializing chat service: {e}")
-        
-        # Try again with a fallback approach
-        try:
-            from vector_store import VectorStore
-            logger.info("Trying fallback initialization...")
-            
-            # Create vector store with explicit instructions to use pre-built database
-            vector_store = VectorStore(embedding_dimensions=192)
-            
-            # Initialize the chat service with the vector store
-            chat_service = ChatService(init_db=False)
-            chat_service.vector_store = vector_store
-            
-            # Try to load the vector database explicitly
-            logger.info("Loading vector database in fallback...")
-            if os.path.exists(vector_store.db_path):
-                chat_service.vector_store.load_vector_db()
-                vector_db_ready = True
-                logger.info("Vector database loaded in fallback approach")
-            else:
-                # If no database exists, try creating it
-                logger.info("No database found, initializing a new one...")
-                chat_service.vector_store.get_or_create_vector_db()
-                vector_db_ready = True
-                logger.info("New vector database created in fallback approach")
-            
-        except Exception as e:
-            logger.error(f"Fallback initialization failed: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
 
 # Start the initialization immediately instead of in a background thread
 # This ensures the database is ready before accepting requests

@@ -3,7 +3,10 @@ services:
   - type: web
     name: part-matching-engine
     env: python
-    buildCommand: cd backend && pip install -r requirements.txt
+    buildCommand: |
+      cd backend && pip install -r requirements.txt
+      mkdir -p /data/source
+      cp -r ../Data/* /data/source/ || true
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     envVars:
       - key: PYTHON_VERSION
